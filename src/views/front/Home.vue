@@ -17,6 +17,8 @@ onMounted(async () => {
     destinations.value = data.hotDestinations
     notes.value = data.hotNotes
     routes.value = data.recommendedTrips
+  } catch {
+    // 请求层已统一提示错误；后端尚未实现时保留空数据，避免产生未处理异常。
   } finally {
     loading.value = false
   }

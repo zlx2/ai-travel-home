@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { TOKEN_KEY } from '../utils/auth'
 
 const routes=[
   {path:'/login',component:()=>import('../views/front/Login.vue'),meta:{guest:true}},
@@ -18,5 +19,5 @@ const routes=[
   {path:'/:pathMatch(.*)*',redirect:'/'}
 ]
 const router=createRouter({history:createWebHistory(),routes,scrollBehavior:()=>({top:0})})
-router.beforeEach(to=>{const token=localStorage.getItem('ai-travel-token');if(to.meta.auth&&!token){ElMessage.info('请先登录');return{path:'/login',query:{redirect:to.fullPath}}}return true})
+router.beforeEach(to=>{const token=localStorage.getItem(TOKEN_KEY);if(to.meta.auth&&!token){ElMessage.info('请先登录');return{path:'/login',query:{redirect:to.fullPath}}}return true})
 export default router

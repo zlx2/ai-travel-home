@@ -39,9 +39,9 @@ export const notes:Note[]=[
   {id:4,authorId:1,authorNickname:'旅行者 Sora',authorAvatarUrl:users[0].avatarUrl,title:'厦门海边散步指南',coverUrl:images[4],destination:'厦门',summary:'不追网红店，只沿着海风走一走。',content:'# 海风自由\n\n从沙坡尾一路走到海边，慢慢看日落。',tags:['海岛','轻松游'],tagIds:[7,4],likeCount:628,favoriteCount:168,commentCount:0,status:1,createTime:now},
 ]
 export const comments:Comment[]=[{id:1,noteId:1,noteTitle:notes[0].title,userId:1,nickname:'旅行者 Sora',avatarUrl:users[0].avatarUrl,content:'路线很舒服，已经收藏准备照着走！',createTime:'2026-06-20 12:20:00'},{id:2,noteId:1,noteTitle:notes[0].title,userId:3,nickname:'小鱼在旅行',avatarUrl:users[2].avatarUrl,content:'欢迎来重庆，记得穿舒服的鞋～',createTime:'2026-06-20 13:10:00'}]
-export const persist=()=>{localStorage.setItem('ai-travel-trips',JSON.stringify(trips));localStorage.setItem('ai-travel-notes',JSON.stringify(notes));localStorage.setItem('ai-travel-comments',JSON.stringify(comments))}
+export const persist=()=>{localStorage.setItem('plango-trips',JSON.stringify(trips));localStorage.setItem('plango-notes',JSON.stringify(notes));localStorage.setItem('plango-comments',JSON.stringify(comments))}
 const restore=<T>(key:string,target:T[])=>{try{const value=JSON.parse(localStorage.getItem(key)||'null');if(Array.isArray(value))target.splice(0,target.length,...value)}catch{}}
-restore('ai-travel-trips',trips);restore('ai-travel-notes',notes);restore('ai-travel-comments',comments)
+restore('plango-trips',trips);restore('plango-notes',notes);restore('plango-comments',comments)
 const highResCover=(destination:string)=>destinations.find(item=>item.name===destination)?.coverUrl
 trips.forEach(item=>{item.coverUrl=highResCover(item.destination)||item.coverUrl})
 notes.forEach(item=>{item.coverUrl=highResCover(item.destination)||item.coverUrl})

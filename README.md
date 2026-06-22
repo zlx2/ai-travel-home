@@ -1,4 +1,4 @@
-# AI 智行伴旅 · 一期前台
+# PlanGo · 智能旅行规划平台
 
 技术栈：Vue 3、TypeScript、Vite、Element Plus、Pinia、Vue Router、Axios、v-md-editor。
 

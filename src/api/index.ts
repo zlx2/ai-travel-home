@@ -9,10 +9,10 @@ export const connectionApi={
   check(action:string){return request.post('/debug/connect',{action}) as Promise<ConnectionCheckResult>},
 }
 export const authApi={
-  async login(payload:{account:string;password:string}){if(!USE_MOCK)return request.post('/auth/login',payload) as Promise<{token:string;user:UserInfo}>;await delay();const user=users.find(u=>u.username===payload.account||u.email===payload.account)||users[0];if(payload.password.length<6)throw new Error('密码至少 6 位');return{token:`demo-token-${user.id}`,user}},
-  async register(payload:{username:string;email:string;password:string;emailCode:string}){if(!USE_MOCK)return request.post('/auth/register',payload);await delay();return{id:Date.now()}},
-  async sendCode(email:string){if(!USE_MOCK)return request.post('/auth/email-code',{email,scene:'register'});await delay();return null},
-  async logout(){if(!USE_MOCK)return request.post('/auth/logout');await delay(120);return null},
+  login(payload:{account:string;password:string}){return request.post('/auth/login',payload) as Promise<{token:string;user:UserInfo}>},
+  register(payload:{username:string;email:string;password:string;emailCode:string}){return request.post('/auth/register',payload) as Promise<{id:number}>},
+  sendCode(email:string){return request.post('/auth/email-code',{email,scene:'register'}) as Promise<void>},
+  logout(){return request.post('/auth/logout') as Promise<void>},
 }
 export const homeApi={async getHome(){if(!USE_MOCK)return request.get('/home');await delay();return{hotDestinations:destinations.slice(0,6),hotNotes:notes.filter(n=>n.status===1).slice(0,3),hotTags:tags,recommendedTrips:[{destination:'重庆',days:3,preferences:['美食','夜景']},{destination:'成都',days:4,preferences:['美食','轻松游']},{destination:'西安',days:3,preferences:['历史文化','拍照打卡']},{destination:'厦门',days:3,preferences:['海岛','轻松游']}]}}}
 export const aiApi={

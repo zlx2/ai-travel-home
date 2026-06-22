@@ -9,3 +9,8 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# AI coding tools
+.claude/
+CLAUDE.md
+.cursor/

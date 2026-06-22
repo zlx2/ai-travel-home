@@ -14,6 +14,7 @@ const routes=[
     {path:'notes/create',name:'note-create',component:()=>import('../views/front/NoteEditor.vue'),meta:{auth:true}},
     {path:'notes/edit/:id',name:'note-edit',component:()=>import('../views/front/NoteEditor.vue'),meta:{auth:true}},
     {path:'notes/:id',name:'note-detail',component:()=>import('../views/front/NoteDetail.vue')},
+    {path:'car-rental',name:'car-rental',component:()=>import('../views/front/CarRental.vue')},
     {path:'profile',name:'profile',component:()=>import('../views/front/Profile.vue'),meta:{auth:true}},
   ]},
   {path:'/:pathMatch(.*)*',redirect:'/'}

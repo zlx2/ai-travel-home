@@ -12,7 +12,7 @@ const logout=async()=>{await store.logout();router.push('/')}
       <div class="container nav-inner">
         <router-link class="logo" to="/"><span class="logo-symbol">✈</span><span>AI智行伴旅</span></router-link>
         <nav class="main-nav">
-          <router-link to="/">首页</router-link><router-link to="/ai-trip">AI 行程规划</router-link><router-link to="/trips">我的行程</router-link><router-link to="/notes">游记社区</router-link>
+          <router-link to="/">首页</router-link><router-link to="/ai-trip">AI 行程规划</router-link><router-link to="/trips">我的行程</router-link><router-link to="/car-rental">租车出行</router-link><router-link to="/notes">游记社区</router-link>
         </nav>
         <div class="nav-actions" v-if="!store.isLogin"><el-button text @click="go('/login')">登录</el-button><el-button type="primary" round @click="go('/register')">免费注册</el-button></div>
         <el-dropdown v-else trigger="click">
@@ -23,7 +23,7 @@ const logout=async()=>{await store.logout();router.push('/')}
     </header>
     <main><router-view /></main>
     <footer class="front-footer" :class="{compact:route.name==='home'}" v-if="route.name!=='ai-trip'">
-      <div class="container footer-grid"><div><div class="logo"><span class="logo-symbol">✈</span><span>AI智行伴旅</span></div><p>一句话，开启一段更懂你的旅程。</p></div><div><b>产品</b><router-link to="/ai-trip">AI 行程规划</router-link><router-link to="/trips">我的行程</router-link></div><div><b>发现</b><router-link to="/notes">游记社区</router-link><router-link to="/">热门目的地</router-link></div><div class="footer-slogan"><el-icon><MapLocation/></el-icon><span>探索世界，也发现自己</span></div></div>
+      <div class="container footer-grid"><div><div class="logo"><span class="logo-symbol">✈</span><span>AI智行伴旅</span></div><p>一句话，开启一段更懂你的旅程。</p></div><div><b>产品</b><router-link to="/ai-trip">AI 行程规划</router-link><router-link to="/trips">我的行程</router-link><router-link to="/car-rental">租车出行</router-link></div><div><b>发现</b><router-link to="/notes">游记社区</router-link><router-link to="/">热门目的地</router-link></div><div class="footer-slogan"><el-icon><MapLocation/></el-icon><span>探索世界，也发现自己</span></div></div>
       <div class="copyright">© 2026 AI 智行伴旅 · 课程项目演示</div>
     </footer>
   </div>

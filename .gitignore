@@ -2,9 +2,22 @@ node_modules/
 dist/
 *.tsbuildinfo
 *.log
+
+# 本地环境与配置文件
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.yml
+*.yaml
+*.properties
+*.local
+
+# 密钥与证书文件
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
 .idea/
 .vscode/
 .DS_Store
@@ -14,7 +27,3 @@ Thumbs.db
 .claude/
 CLAUDE.md
 .cursor/
-
-# Local YAML configuration
-*.yml
-*.yaml

@@ -14,3 +14,7 @@ Thumbs.db
 .claude/
 CLAUDE.md
 .cursor/
+
+# Local YAML configuration
+*.yml
+*.yaml

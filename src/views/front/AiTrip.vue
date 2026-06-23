@@ -1,57 +1,358 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Check, Coin, Loading, MagicStick, MapLocation, Position, Refresh, Tickets } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
+import { Loading, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { aiApi, tripApi } from '../../api'
-import TripPlanView from '../../components/trip/TripPlanView.vue'
+import DayPlanCard from '../../components/trip-builder/DayPlanCard.vue'
+import FinalReviewPanel from '../../components/trip-builder/FinalReviewPanel.vue'
+import NaturalLanguageInputCard from '../../components/trip-builder/NaturalLanguageInputCard.vue'
+import RentalQuoteDeck from '../../components/trip-builder/RentalQuoteDeck.vue'
+import RequirementSummaryBar from '../../components/trip-builder/RequirementSummaryBar.vue'
+import TripProgressRail from '../../components/trip-builder/TripProgressRail.vue'
+import type { BuilderDay, BuilderStep, RentalQuote } from '../../components/trip-builder/types'
 import type { AnalyzeResult, RecommendationContext, Requirement, TripPlan } from '../../types'
-const route=useRoute(),router=useRouter()
-const userInput=ref('我想从上海去重庆玩3天，喜欢美食和夜景，预算2000，不想太累')
-const showForm=ref(false),analyzing=ref(false),generating=ref(false),saving=ref(false),result=ref<AnalyzeResult|null>(null),plan=ref<TripPlan|null>(null),recommendation=ref<RecommendationContext|null>(null),progress=ref(0)
-const form=reactive<Requirement>({departure:'上海',destination:'',days:3,budget:2000,budgetType:'TOTAL',peopleCount:2,preferences:['美食','夜景'],pace:'LIGHT',avoidances:[],travelDate:''})
-const preferenceOptions=['美食','夜景','历史文化','自然风光','亲子','拍照打卡','海岛','轻松游']
-onMounted(()=>{if(route.query.destination){form.destination=String(route.query.destination);form.days=Number(route.query.days||3);form.preferences=String(route.query.preferences||'').split(',').filter(Boolean);userInput.value=`我想去${form.destination}玩${form.days}天，喜欢${form.preferences.join('和')}，行程轻松一点`;showForm.value=true}})
-const analyze=async()=>{if(!userInput.value.trim()&&!form.destination)return ElMessage.warning('先告诉 AI 你想去哪里、怎么玩');analyzing.value=true;plan.value=null;recommendation.value=null;try{result.value=await aiApi.analyze({conversationId:result.value?.conversationId,userInput:userInput.value,requirement:form});if(result.value.requirement)Object.assign(form,result.value.requirement)}catch{}finally{analyzing.value=false}}
-const chooseDestination=async(name:string)=>{form.destination=name;userInput.value+=`，目的地选择${name}`;await analyze()}
-const generate=async()=>{if(!result.value?.requirement)return;generating.value=true;progress.value=0;const timer=setInterval(()=>progress.value=Math.min(progress.value+1,3),600);try{const data=await aiApi.generate(result.value.conversationId,result.value.requirement);plan.value=data.tripPlan;recommendation.value=data.recommendationContext||null;setTimeout(()=>document.querySelector('.result-anchor')?.scrollIntoView({behavior:'smooth'}),100)}catch{}finally{clearInterval(timer);generating.value=false}}
-const save=async()=>{if(!plan.value||!result.value?.requirement)return;saving.value=true;try{const data=await tripApi.save({title:plan.value.title,destination:plan.value.destination,days:plan.value.days,budget:plan.value.budgetSummary.total,preferences:result.value.requirement.preferences,summary:plan.value.summary,coverUrl:'/assets/chongqing.jpg',requirementJson:result.value.requirement,tripPlanJson:plan.value,userId:1,username:'sora'});ElMessage.success('行程已保存');router.push(`/trips/${data.id}`)}finally{saving.value=false}}
-const ready=computed(()=>result.value?.status==='READY')
+
+const route=useRoute()
+const userInput=ref('带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')
+const showForm=ref(false)
+const analyzing=ref(false)
+const generating=ref(false)
+const saving=ref(false)
+const confirming=ref(false)
+const orderCreated=ref(false)
+const paid=ref(false)
+const result=ref<AnalyzeResult|null>(null)
+const plan=ref<TripPlan|null>(null)
+const recommendation=ref<RecommendationContext|null>(null)
+const step=ref<BuilderStep>('INPUT')
+const days=ref<BuilderDay[]>([])
+const currentDayIndex=ref(0)
+const selectedQuoteId=ref('comfort')
+const reviseVisible=ref(false)
+const reviseText=ref('')
+
+const form=reactive<Requirement>({
+  departure:'上海',
+  destination:'杭州',
+  days:3,
+  budget:4000,
+  budgetType:'TOTAL',
+  peopleCount:2,
+  preferences:['自然风光','历史文化','美食体验'],
+  pace:'LIGHT',
+  avoidances:['不要太累'],
+  travelDate:'',
+})
+const preferenceOptions=['美食体验','夜景','历史文化','自然风光','亲子','拍照打卡','自驾','轻松游']
+
+onMounted(()=>{
+  if(route.query.destination){
+    form.destination=String(route.query.destination)
+    form.days=Number(route.query.days||3)
+    form.preferences=String(route.query.preferences||'').split(',').filter(Boolean)
+    userInput.value=`我想去${form.destination}玩${form.days}天，喜欢${form.preferences.join('和')}，行程轻松一点`
+    showForm.value=true
+  }
+})
+
+const activeRequirement=computed(()=>result.value?.requirement||form)
+const ready=computed(()=>result.value?.status==='READY'&&!!result.value.requirement)
+const hasRental=computed(()=>{
+  const text=`${userInput.value} ${form.preferences.join(' ')}`
+  return /自驾|租车|落地|取车|还车|多城市|江浙沪|周边/.test(text)
+})
+const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')?'出行方式：落地租车':'路线模式：租车自驾'):'城市轻松游')
+const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
+const currentDay=computed(()=>days.value[currentDayIndex.value])
+const lockedCount=computed(()=>days.value.filter(day=>day.status==='locked').length)
+const progressStyle=computed(()=>({background:`conic-gradient(#10b981 ${Math.round((lockedCount.value/Math.max(days.value.length,1))*360)}deg,#e5eaf0 0deg)`}))
+
+const quoteOptions=computed<RentalQuote[]>(()=>{
+  const req=activeRequirement.value
+  const dayCount=Math.max(1,req.days||3)
+  const pickup=req.destination?`${req.destination}站`:'目的地门店'
+  const airport=req.destination?`${req.destination}萧山国际机场`:'机场门店'
+  return [
+    {id:'comfort',label:'推荐套餐',name:'舒适型轿车',subtitle:'大众朗逸或同级',seats:5,luggage:2,tags:['自动挡','空调'],pickup:airport,returnPlace:airport,pickupTime:'06-01 09:00',returnTime:`06-${String(dayCount).padStart(2,'0')} 18:00`,totalPrice:620,dayCount,serviceTags:['基本保险','24h 道路救援','免费取消','无限里程'],tone:'blue'},
+    {id:'suv',label:'性价比优选',name:'SUV 经济型',subtitle:'哈弗 H6 或同级',seats:5,luggage:2,tags:['自动挡','山路友好'],pickup,returnPlace:pickup,pickupTime:'06-01 09:00',returnTime:`06-${String(dayCount).padStart(2,'0')} 18:00`,totalPrice:780,dayCount,serviceTags:['基本保险','24h 道路救援','免费取消'],tone:'teal'},
+    {id:'business',label:'宽敞舒适',name:'7座商务车',subtitle:'别克 GL8 或同级',seats:7,luggage:4,tags:['自动挡','家庭多人'],pickup:airport,returnPlace:airport,pickupTime:'06-01 09:00',returnTime:`06-${String(dayCount).padStart(2,'0')} 18:00`,totalPrice:980,dayCount,serviceTags:['基本保险','24h 道路救援','免费取消','宽敞座舱'],tone:'gold'},
+  ]
+})
+
+const applyExample=(value:string)=>{
+  userInput.value=value
+  if(value.includes('杭州')) form.destination='杭州'
+  if(value.includes('成都')) form.destination='成都'
+  if(value.includes('江浙沪')) form.destination='杭州'
+  if(value.includes('自驾')&&!form.preferences.includes('自驾')) form.preferences.push('自驾')
+  const daysText=value.match(/(\d+)\s*天/)
+  if(daysText) form.days=Number(daysText[1])
+}
+
+const analyze=async()=>{
+  if(!userInput.value.trim()&&!form.destination)return ElMessage.warning('先告诉 AI 你想去哪里、怎么玩')
+  analyzing.value=true
+  plan.value=null
+  recommendation.value=null
+  days.value=[]
+  orderCreated.value=false
+  paid.value=false
+  try{
+    result.value=await aiApi.analyze({conversationId:result.value?.conversationId,userInput:userInput.value,requirement:form})
+    if(result.value.requirement)Object.assign(form,result.value.requirement)
+    step.value=ready.value?'ANALYZED':'INPUT'
+  }finally{
+    analyzing.value=false
+  }
+}
+
+const chooseDestination=async(name:string)=>{
+  form.destination=name
+  userInput.value=`${userInput.value}，目的地选择${name}`
+  await analyze()
+}
+
+const continueFromSummary=()=>{
+  if(!ready.value)return
+  step.value=hasRental.value?'QUOTE_SELECT':'DAY_BUILDING'
+  if(!hasRental.value) startDayBuilding()
+}
+
+const startDayBuilding=async()=>{
+  if(!result.value?.requirement)return
+  generating.value=true
+  step.value='DAY_BUILDING'
+  try{
+    const data=await aiApi.generate(result.value.conversationId,result.value.requirement)
+    plan.value=data.tripPlan
+    recommendation.value=data.recommendationContext||null
+    days.value=createBuilderDays(data.tripPlan,result.value.requirement,!!selectedQuote.value)
+    currentDayIndex.value=days.value.findIndex(day=>day.status==='active')
+    if(currentDayIndex.value<0)currentDayIndex.value=0
+    setTimeout(()=>document.querySelector('.day-builder-anchor')?.scrollIntoView({behavior:'smooth',block:'start'}),100)
+  }finally{
+    generating.value=false
+  }
+}
+
+const confirmCurrentDay=()=>{
+  if(!currentDay.value)return
+  confirming.value=true
+  setTimeout(()=>{
+    days.value[currentDayIndex.value]={...currentDay.value,status:'locked'}
+    const next=currentDayIndex.value+1
+    if(next<days.value.length){
+      days.value[next]={...days.value[next],status:'active'}
+      currentDayIndex.value=next
+    }else{
+      step.value='FINAL_REVIEW'
+    }
+    confirming.value=false
+  },420)
+}
+
+const regenerateCurrentDay=()=>{
+  if(!currentDay.value)return
+  const index=currentDayIndex.value
+  days.value[index]={...days.value[index],status:'generating'}
+  setTimeout(()=>{
+    days.value[index]={...days.value[index],status:'active',subtitle:'已根据新的思路重新平衡节奏、交通和停留时间。'}
+    ElMessage.success(`Day ${String(days.value[index].day).padStart(2,'0')} 已重新生成`)
+  },650)
+}
+
+const submitRevision=()=>{
+  if(!reviseText.value.trim())return ElMessage.warning('先告诉 AI 你希望怎么调整')
+  reviseVisible.value=false
+  reviseText.value=''
+  regenerateCurrentDay()
+}
+
+const createOrder=async()=>{
+  if(!plan.value||!result.value?.requirement)return
+  saving.value=true
+  try{
+    await tripApi.save({
+      title:plan.value.title,
+      destination:plan.value.destination,
+      days:plan.value.days,
+      budget:plan.value.budgetSummary.total,
+      preferences:result.value.requirement.preferences,
+      summary:plan.value.summary,
+      coverUrl:coverForDestination(plan.value.destination),
+      requirementJson:result.value.requirement,
+      tripPlanJson:plan.value,
+      userId:1,
+      username:'sora',
+    })
+    orderCreated.value=true
+    step.value='ORDER_CREATED'
+    ElMessage.success('行程已保存，订单演示态已创建')
+  }finally{
+    saving.value=false
+  }
+}
+
+const sandboxPay=()=>{
+  if(!orderCreated.value)return ElMessage.info('请先创建订单')
+  paid.value=true
+  step.value='PAID'
+  ElMessage.success('已触发沙箱支付演示态，未伪造真实支付结果')
+}
+
+function coverForDestination(destination:string){
+  if(destination.includes('杭州'))return'/assets/hq/hangzhou.jpg'
+  if(destination.includes('成都'))return'/assets/hq/chengdu.jpg'
+  if(destination.includes('厦门'))return'/assets/hq/xiamen.jpg'
+  if(destination.includes('西安'))return'/assets/hq/xian.jpg'
+  if(destination.includes('云南'))return'/assets/hq/yunnan.jpg'
+  return'/assets/hq/chongqing.jpg'
+}
+
+function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean):BuilderDay[]{
+  const image=coverForDestination(requirement.destination)
+  const fallbackRoutes=['城市地标','本地餐厅','文化街区','夜间漫步']
+  return tripPlan.dailyPlans.map((day,index)=>{
+    const activities=day.activities.length?day.activities:[]
+    const route=activities.map(item=>item.title.split('→')[0].trim()).filter(Boolean).slice(0,5)
+    while(route.length<4)route.push(fallbackRoutes[route.length])
+    const foodCost=Math.max(120,requirement.peopleCount*75)
+    const tickets=Math.max(0,activities.reduce((sum,item)=>sum+(item.cost||0),0))
+    const traffic=rentalEnabled?50:30
+    const other=50
+    return {
+      day:day.day,
+      title:day.title||`${requirement.destination}精选体验`,
+      subtitle:index===0?'从城市核心印象开始，保留足够步行和休息时间。':'在自然、文化与本地烟火之间，感受更松弛的一天。',
+      status:index===0?'active':'pending',
+      route,
+      moments:[
+        buildMoment('morning','上午','09:00-12:00',activities[0],image,['景点','步行游览']),
+        {key:'lunch',period:'中午',time:'12:00-13:30',title:day.food[0]||`${requirement.destination}本地餐厅`,description:'安排顺路餐厅，减少绕行，把体力留给下午体验。',tags:['本地风味','轻松用餐'],cost:foodCost,image:'/assets/map-card.jpg'},
+        buildMoment('afternoon','下午','14:00-17:30',activities[1]||activities[0],image,['文化体验','慢游']),
+        buildMoment('evening','晚上','18:00-21:00',activities[2]||activities[0],image,['夜间散步','烟火气']),
+      ],
+      foods:day.food,
+      budget:{tickets,food:foodCost,traffic,other,total:tickets+foodCost+traffic+other},
+      rental:{enabled:rentalEnabled,departure:`${requirement.destination}核心范围`,duration:rentalEnabled?'约 8 小时':'按需短途',mileage:rentalEnabled?68:18,fuelCost:traffic},
+      tips:[
+        '热门景点建议错峰出行，上午优先安排核心体验。',
+        requirement.pace==='LIGHT'?'已按轻松节奏预留休息和交通缓冲。':'景点间预留交通缓冲，避免连续赶路。',
+        rentalEnabled?'自驾当天请提前确认停车场与限行规则。':'夜间返程优先选择网约车或地铁主线。',
+      ],
+    }
+  })
+}
+
+function buildMoment(key:string,period:string,time:string,activity:any,image:string,tags:string[]){
+  return {
+    key,
+    period,
+    time:activity?.time||time,
+    title:activity?.title||'城市精选体验',
+    description:activity?.description||'保留目的地代表性体验，同时控制步行和换乘压力。',
+    tags:activity?.tags?.length?activity.tags:tags,
+    cost:Number(activity?.cost||0),
+    image,
+  }
+}
 </script>
+
 <template>
   <div class="ai-workspace">
-    <section class="ai-top"><div class="container"><span class="eyebrow">AI TRIP PLANNER</span><h1>把旅行灵感，交给 AI 整理</h1><p>自然地描述你的想法。信息不足时，AI 会继续追问，而不是胡乱猜测。</p></div></section>
-    <div class="container ai-body">
-      <section class="prompt-card card"><div class="prompt-title"><span class="spark"><el-icon><MagicStick/></el-icon></span><div><h2>你想拥有一段怎样的旅程？</h2><p>可以包含出发地、目的地、天数、预算、同行人和偏好。</p></div></div><el-input v-model="userInput" type="textarea" :rows="4" resize="none" placeholder="例如：我想下周从上海去重庆玩3天，喜欢美食和夜景，预算2000，不想太累"/><div class="quick-examples"><span>试试这样说：</span><button @click="userInput='带父母去杭州玩3天，不要太累，喜欢自然风光'">带父母轻松游杭州</button><button @click="userInput='情侣去厦门玩4天，喜欢海边和拍照，预算4000'">情侣厦门看海</button></div><div class="prompt-actions"><el-button text @click="showForm=!showForm"><el-icon><ArrowDown/></el-icon>{{showForm?'收起':'展开'}}详细偏好</el-button><el-button class="gradient-button" type="primary" size="large" :loading="analyzing" @click="analyze"><el-icon><MagicStick/></el-icon>开始分析需求</el-button></div></section>
+    <div class="container builder-container">
+      <NaturalLanguageInputCard
+        v-if="step==='INPUT'||step==='ANALYZED'||step==='QUOTE_SELECT'"
+        v-model="userInput"
+        :form="form"
+        :show-form="showForm"
+        :loading="analyzing"
+        :preference-options="preferenceOptions"
+        :suggestions="result?.status==='NEED_DESTINATION_CHOICE'?result.destinationSuggestions:[]"
+        @update:show-form="showForm=$event"
+        @analyze="analyze"
+        @choose-destination="chooseDestination"
+        @apply-example="applyExample"
+      />
 
-      <el-collapse-transition><section v-show="showForm" class="detail-form card"><div class="form-grid"><el-form-item label="出发地"><el-input v-model="form.departure" placeholder="如：上海"/></el-form-item><el-form-item label="目的地"><el-input v-model="form.destination" placeholder="也可以让 AI 推荐"/></el-form-item><el-form-item label="旅行天数"><el-input-number v-model="form.days" :min="1" :max="15"/></el-form-item><el-form-item label="预算（元）"><el-input-number v-model="form.budget" :min="500" :step="500"/></el-form-item><el-form-item label="同行人数"><el-input-number v-model="form.peopleCount" :min="1" :max="20"/></el-form-item><el-form-item label="旅行节奏"><el-radio-group v-model="form.pace"><el-radio-button label="LIGHT">轻松</el-radio-button><el-radio-button label="MEDIUM">适中</el-radio-button><el-radio-button label="TIGHT">充实</el-radio-button></el-radio-group></el-form-item></div><el-form-item label="旅行偏好"><el-checkbox-group v-model="form.preferences"><el-checkbox-button v-for="item in preferenceOptions" :key="item" :label="item">{{item}}</el-checkbox-button></el-checkbox-group></el-form-item></section></el-collapse-transition>
+      <RequirementSummaryBar
+        v-if="ready&&(step==='ANALYZED'||step==='QUOTE_SELECT')"
+        :requirement="activeRequirement"
+        :route-mode="routeMode"
+        :has-rental="hasRental"
+        @edit="step='INPUT';showForm=true"
+        @continue="continueFromSummary"
+      />
 
-      <section v-if="analyzing" class="analysis-loading card"><span class="scan-icon"><el-icon><Loading class="is-loading"/></el-icon></span><div><h3>AI 正在理解你的旅行需求</h3><p>正在识别目的地、预算、旅行节奏与偏好...</p></div><div class="scan-lines"><i></i><i></i><i></i></div></section>
+      <RentalQuoteDeck
+        v-if="step==='QUOTE_SELECT'"
+        :quotes="quoteOptions"
+        :selected-id="selectedQuoteId"
+        @select="selectedQuoteId=$event"
+        @continue="startDayBuilding"
+      />
 
-      <section v-else-if="result" class="analysis-result card">
-        <template v-if="ready"><div class="result-head"><span><el-icon><Check/></el-icon></span><div><h2>需求已经整理好了</h2><p>生成前再确认一次，随时可以返回修改。</p></div><el-tag type="success" size="large">信息完整</el-tag></div><div class="requirement-grid"><div><small>目的地</small><b>{{result.requirement?.destination}}</b></div><div><small>天数 / 人数</small><b>{{result.requirement?.days}} 天 · {{result.requirement?.peopleCount}} 人</b></div><div><small>预算</small><b>¥{{result.requirement?.budget}}</b></div><div><small>旅行节奏</small><b>{{result.requirement?.pace==='LIGHT'?'轻松舒适':'充实探索'}}</b></div><div class="wide"><small>偏好</small><el-tag v-for="tag in result.requirement?.preferences" :key="tag" effect="light">{{tag}}</el-tag></div></div><div class="generate-row"><p>预计生成包含每日路线、美食、预算与旅行贴士的完整方案。</p><el-button class="gradient-button" type="primary" size="large" @click="generate"><el-icon><MagicStick/></el-icon>生成专属行程</el-button></div></template>
-        <template v-else-if="result.status==='NEED_DESTINATION_CHOICE'"><div class="choice-head"><span class="spark"><el-icon><MapLocation/></el-icon></span><div><h2>还没想好目的地？</h2><p>根据你的偏好，AI 推荐了这几个方向。</p></div></div><div class="destination-choices"><button v-for="item in result.destinationSuggestions" :key="item.id" @click="chooseDestination(item.name)"><img :src="item.coverUrl"><span><b>{{item.name}}</b><small>{{item.description}}</small></span><el-icon><Position/></el-icon></button></div></template>
+      <section v-if="generating" class="builder-loading builder-card">
+        <span><el-icon><Loading class="is-loading"/></el-icon></span>
+        <h2>正在逐日生成行程</h2>
+        <p>PlanGo 正在整理路线、餐饮、交通、预算和 AI 提醒。</p>
       </section>
 
-      <section v-if="generating" class="generate-loading card"><div class="generate-visual"><span>✦</span><i></i><i></i></div><h2>正在为你编排行程</h2><p>{{['识别需求与旅行偏好','补全旅行信息','生成每日安排','整理预算与建议'][progress]}}</p><el-steps :active="progress" finish-status="success" align-center><el-step title="识别需求"/><el-step title="补全信息"/><el-step title="每日安排"/><el-step title="预算建议"/></el-steps></section>
-
-      <div class="result-anchor"></div><section v-if="plan&&!generating" class="generated-result"><div class="result-toolbar"><div><span class="eyebrow">YOUR PERSONAL ITINERARY</span><h2>你的专属行程已准备好</h2></div><div><el-button :icon="Refresh" @click="generate">重新生成</el-button><el-button class="gradient-button" type="primary" :loading="saving" @click="save">保存到我的行程</el-button></div></div>
-        <section v-if="recommendation" class="recommend-context card">
-          <div class="recommend-head"><span class="eyebrow">RECOMMENDATION CONTEXT</span><h3>本次生成参考</h3><p>{{ recommendation.transportPlan.travelMode.reason }}</p></div>
-          <div class="recommend-grid">
-            <article><b>景点</b><span v-for="item in recommendation.scenicSpots" :key="item.name">{{ item.name }}</span></article>
-            <article><b>美食</b><span v-for="item in recommendation.foodSpots" :key="item.name">{{ item.name }} · {{ item.specialty }}</span></article>
-            <article><b>住宿</b><span v-for="item in recommendation.hotelAreas" :key="item.area">{{ item.area }} · {{ item.priceRange }}</span></article>
-            <article><b>交通</b><span>{{ recommendation.transportPlan.travelMode.mode === 'SELF_DRIVE' ? '自驾增强' : '公共交通优先' }}</span><span v-if="recommendation.transportPlan.pickupStore">取车：{{ recommendation.transportPlan.pickupStore.displayName }}</span><span v-for="tip in recommendation.transportPlan.tips" :key="tip">{{ tip }}</span></article>
+      <div class="day-builder-anchor"></div>
+      <section v-if="step==='DAY_BUILDING'&&!generating&&currentDay" class="day-builder">
+        <header class="trip-summary builder-card">
+          <img :src="coverForDestination(activeRequirement.destination)" alt="trip cover">
+          <div class="summary-title">
+            <h2>{{ activeRequirement.destination }} {{ activeRequirement.days }} 日漫游</h2>
+            <p>{{ activeRequirement.preferences.join(' · ') || '自然人文与美食之旅' }}</p>
           </div>
-        </section>
-        <TripPlanView :plan="plan"/></section>
+          <div class="summary-cell"><small>目的地</small><b>{{ activeRequirement.destination }}</b></div>
+          <div class="summary-cell"><small>行程路线</small><b>核心城区 → 周边 → 核心城区</b></div>
+          <div class="summary-cell"><small>天数</small><b>{{ activeRequirement.days }} 天</b></div>
+          <div class="summary-cell"><small>人数</small><b>{{ activeRequirement.peopleCount }} 人</b></div>
+          <div class="summary-cell"><small>租车套餐</small><b>{{ selectedQuote?.name || '未选择' }}</b></div>
+          <div class="progress-cell">
+            <i :style="progressStyle"></i>
+            <div><small>行程确认进度</small><b>已确认 {{ lockedCount }} / {{ days.length }} 天</b><span>继续完善，行程更完整</span></div>
+          </div>
+        </header>
+
+        <div class="builder-main">
+          <TripProgressRail :days="days" :current-day="currentDay.day"/>
+          <DayPlanCard
+            :day="currentDay"
+            :selected-quote="selectedQuote"
+            :confirming="confirming"
+            @confirm="confirmCurrentDay"
+            @regenerate="regenerateCurrentDay"
+            @revise="reviseVisible=true"
+          />
+        </div>
+      </section>
+
+      <FinalReviewPanel
+        v-if="step==='FINAL_REVIEW'||step==='ORDER_CREATED'||step==='PAID'"
+        :data="{requirement:activeRequirement,days,selectedQuote}"
+        :saving="saving"
+        :order-created="orderCreated"
+        :paid="paid"
+        @create-order="createOrder"
+        @sandbox-pay="sandboxPay"
+        @back="step='DAY_BUILDING'"
+      />
+
+      <el-dialog v-model="reviseVisible" title="告诉 AI 怎么改" width="520px">
+        <el-input v-model="reviseText" type="textarea" :rows="5" resize="none" placeholder="例如：下午太累了，换成轻松一点；午餐想吃本地老字号；减少步行距离。"/>
+        <template #footer>
+          <el-button @click="reviseVisible=false">取消</el-button>
+          <el-button type="primary" @click="submitRevision">提交调整</el-button>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
+
 <style scoped>
-.ai-workspace{min-height:calc(100vh - 72px);background:radial-gradient(circle at 12% 6%,#e5f5ff 0,transparent 24%),radial-gradient(circle at 88% 20%,#dff8f1 0,transparent 22%),#f6f8fb;padding-bottom:80px}.ai-top{text-align:center;padding:55px 0 24px}.ai-top h1{font-size:38px;margin:10px 0}.ai-top p{color:var(--muted)}.ai-body{max-width:980px}.prompt-card{padding:30px}.prompt-title{display:flex;gap:14px;align-items:center;margin-bottom:22px}.spark{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;color:#fff;background:var(--gradient);box-shadow:0 10px 25px #2f80ed36;font-size:21px}.prompt-title h2,.prompt-title p{margin:0}.prompt-title p{color:#7a8595;margin-top:5px;font-size:13px}.prompt-card :deep(.el-textarea__inner){font-size:16px;line-height:1.8;border-radius:15px;padding:16px;box-shadow:0 0 0 1px #dce4ec inset}.quick-examples{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:#8992a1}.quick-examples button{border:0;border-radius:99px;padding:7px 10px;color:#54779a;background:#f1f6fb;cursor:pointer}.prompt-actions{display:flex;justify-content:space-between;align-items:center;margin-top:21px}.detail-form{padding:26px 30px;margin-top:16px}.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px}.detail-form :deep(.el-input-number){width:100%}.analysis-loading,.analysis-result{margin-top:18px;padding:28px}.analysis-loading{display:flex;align-items:center;gap:18px}.scan-icon{width:52px;height:52px;display:grid;place-items:center;border-radius:50%;background:#eaf4ff;color:var(--blue);font-size:25px}.analysis-loading h3,.analysis-loading p{margin:0}.analysis-loading p{color:#7c8795;margin-top:5px}.scan-lines{margin-left:auto;display:flex;gap:5px}.scan-lines i{width:5px;height:25px;border-radius:5px;background:#6cb6ee;animation:wave 1s infinite alternate}.scan-lines i:nth-child(2){animation-delay:.2s}.scan-lines i:nth-child(3){animation-delay:.4s}@keyframes wave{to{height:8px;opacity:.5}}.result-head,.choice-head{display:flex;align-items:center;gap:13px}.result-head>span{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#e1f8ef;color:#00a67e;font-size:20px}.result-head h2,.result-head p,.choice-head h2,.choice-head p{margin:0}.result-head p,.choice-head p{color:#7a8595;margin-top:4px}.result-head .el-tag{margin-left:auto}.requirement-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:24px}.requirement-grid>div{background:#f7f9fc;padding:15px;border-radius:13px}.requirement-grid small,.requirement-grid b{display:block}.requirement-grid small{color:#8a93a2;margin-bottom:6px}.requirement-grid .wide{grid-column:span 4}.requirement-grid .wide .el-tag{margin-right:7px;border:0}.generate-row{display:flex;align-items:center;justify-content:space-between;margin-top:20px;padding-top:18px;border-top:1px solid #edf0f4}.generate-row p{color:#7b8595;font-size:13px}.choice-head{margin-bottom:20px}.destination-choices{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.destination-choices button{border:1px solid #e6ebf1;background:#fff;border-radius:14px;padding:9px;display:grid;grid-template-columns:60px 1fr auto;gap:10px;align-items:center;text-align:left;cursor:pointer;transition:.2s}.destination-choices button:hover{border-color:#65a4ea;transform:translateY(-2px)}.destination-choices img{width:60px;height:55px;object-fit:cover;border-radius:10px}.destination-choices b,.destination-choices small{display:block}.destination-choices small{color:#8a93a1;font-size:10px;margin-top:3px}.generate-loading{text-align:center;padding:48px;margin-top:18px}.generate-visual{position:relative;width:72px;height:72px;margin:auto;display:grid;place-items:center}.generate-visual span{width:55px;height:55px;border-radius:20px;background:var(--gradient);color:#fff;display:grid;place-items:center;font-size:23px;z-index:1}.generate-visual i{position:absolute;inset:0;border:1px solid #5caee5;border-radius:50%;animation:pulse 1.6s infinite}.generate-visual i:last-child{animation-delay:.7s}@keyframes pulse{to{transform:scale(1.55);opacity:0}}.generate-loading h2{margin:18px 0 6px}.generate-loading p{color:#778293;margin-bottom:35px}.generated-result{margin-top:36px}.result-toolbar{display:flex;align-items:end;justify-content:space-between;margin-bottom:20px}.result-toolbar h2{font-size:28px;margin:6px 0 0}
-</style>
-<style scoped>
-.recommend-context{padding:22px;margin-bottom:18px}.recommend-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:16px}.recommend-head h3{margin:4px 0 0;font-size:20px}.recommend-head p{margin:0;color:#718096;font-size:13px;max-width:420px;text-align:right}.recommend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.recommend-grid article{background:#f7f9fc;border:1px solid #edf1f5;border-radius:12px;padding:14px;min-height:108px}.recommend-grid b,.recommend-grid span{display:block}.recommend-grid b{font-size:13px;margin-bottom:9px;color:#1f2b3d}.recommend-grid span{font-size:12px;color:#667386;line-height:1.55;margin-top:5px}
+.ai-workspace{min-height:calc(100vh - 72px);position:relative;padding:26px 0 80px;background:radial-gradient(circle at 14% 0%,rgba(37,99,235,.055),transparent 30%),radial-gradient(circle at 86% 2%,rgba(5,150,105,.045),transparent 26%),linear-gradient(180deg,#fff 0%,#f7f9fc 42%,#f5f7fa 100%);overflow:hidden}.ai-workspace:before{content:"";position:fixed;inset:72px 0 0;pointer-events:none;opacity:.08;background-image:linear-gradient(rgba(100,116,139,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(100,116,139,.18) 1px,transparent 1px);background-size:56px 56px;mask-image:linear-gradient(to bottom,#000 0%,transparent 70%)}.builder-container{position:relative;z-index:1;display:grid;gap:18px;max-width:1240px}.builder-card{background:#fff;border:1px solid rgba(230,234,240,.95);border-radius:24px;box-shadow:0 16px 48px rgba(15,23,42,.06)}.builder-loading{padding:42px;text-align:center}.builder-loading span{width:58px;height:58px;border-radius:18px;display:grid;place-items:center;margin:0 auto 16px;color:#2563eb;background:#eff6ff;font-size:28px}.builder-loading h2{margin:0;color:#172033}.builder-loading p{margin:8px 0 0;color:#64748b}.day-builder{display:grid;gap:18px}.trip-summary{display:grid;grid-template-columns:150px 1.35fr repeat(5,minmax(96px,.75fr)) 210px;gap:0;align-items:center;padding:16px;overflow:hidden}.trip-summary img{width:136px;height:82px;border-radius:16px;object-fit:cover}.summary-title{padding-right:22px;border-right:1px solid var(--line)}.summary-title h2{margin:0;color:#111827;font-size:25px}.summary-title p{margin:7px 0 0;color:#64748b}.summary-cell{height:64px;display:flex;flex-direction:column;justify-content:center;align-items:center;border-right:1px solid var(--line);padding:0 12px;text-align:center}.summary-cell small,.progress-cell small{color:#8a96a8}.summary-cell b,.progress-cell b{margin-top:6px;color:#182235}.progress-cell{display:flex;align-items:center;gap:12px;padding-left:20px}.progress-cell i{width:48px;height:48px;border-radius:50%;position:relative;flex:0 0 48px}.progress-cell i:after{content:"";position:absolute;inset:8px;border-radius:50%;background:#fff}.progress-cell div{display:flex;flex-direction:column}.progress-cell span{margin-top:5px;color:#8a96a8;font-size:12px}.builder-main{display:grid;grid-template-columns:280px minmax(0,1fr);gap:22px;align-items:start}@media(max-width:1180px){.trip-summary{grid-template-columns:120px 1fr 1fr 1fr}.summary-title{border-right:0}.summary-cell{border-right:0;align-items:flex-start}.progress-cell{grid-column:1/-1;padding:12px 0 0}.builder-main{grid-template-columns:1fr}}@media(max-width:760px){.ai-workspace{padding-top:16px}.trip-summary{grid-template-columns:1fr}.trip-summary img{width:100%;height:160px}.summary-title,.summary-cell,.progress-cell{padding:10px 0;align-items:flex-start;text-align:left}}
 </style>

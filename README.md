@@ -1,6 +1,6 @@
 # PlanGo · 智能旅行规划平台
 
-技术栈：Vue 3、TypeScript、Vite、Element Plus、Pinia、Vue Router、Axios、v-md-editor。
+Vue 3 + TypeScript + Vite + Element Plus + Pinia + Vue Router。
 
 ## 启动
 
@@ -9,17 +9,18 @@ npm install
 npm run dev
 ```
 
-访问：`http://localhost:5173`
+访问 `http://localhost:5173`，演示账号 `sora / 123456`。
 
-演示账号：`sora / 123456`。当前默认使用本地 Mock 数据，并通过 localStorage 持久化行程、游记和评论。
+## 页面
 
-## 后续对接后端
+- 首页 Home
+- 登录/注册 Login / Register
+- 个人中心 Profile
+- AI 行程规划 AiTrip
+- 行程列表/详情 TripList / TripDetail
+- 游记列表/详情/编辑 NoteList / NoteDetail / NoteEditor
+- 租车出行 CarRental（当前使用 Mock 数据）
 
-复制 `.env.example` 为 `.env`，设置：
+## 对接后端
 
-```env
-VITE_USE_MOCK=false
-VITE_API_BASE_URL=/api
-```
-
-页面与数据访问层已经分离，对接时主要调整 `src/api` 和类型映射，无需重写页面。
+`.env.example` → `.env`，设置 `VITE_API_BASE_URL`。页面与数据层已分离。

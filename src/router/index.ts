@@ -10,6 +10,7 @@ const routes=[
     {path:'ai-trip',name:'ai-trip',component:()=>import('../views/front/AiTrip.vue'),meta:{auth:true}},
     {path:'trips',name:'trips',component:()=>import('../views/front/TripList.vue'),meta:{auth:true}},
     {path:'trips/:id',name:'trip-detail',component:()=>import('../views/front/TripDetail.vue'),meta:{auth:true}},
+    {path:'map-playground',name:'map-playground',component:()=>import('../views/front/MapPlayground.vue')},
     {path:'notes',name:'notes',component:()=>import('../views/front/NoteList.vue')},
     {path:'notes/create',name:'note-create',component:()=>import('../views/front/NoteEditor.vue'),meta:{auth:true}},
     {path:'notes/edit/:id',name:'note-edit',component:()=>import('../views/front/NoteEditor.vue'),meta:{auth:true}},

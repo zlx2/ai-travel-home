@@ -2,8 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Calendar, Check, Collection, MagicStick, MapLocation, Picture, User } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { connectionApi, homeApi } from '../../api'
+import { homeApi } from '../../api'
 import type { Destination, Note } from '../../types'
 
 const router = useRouter()
@@ -11,24 +10,19 @@ const loading = ref(true)
 const destinations = ref<Destination[]>([])
 const notes = ref<Note[]>([])
 const routes = ref<any[]>([])
-const checkingConnection = ref(false)
-
-const checkConnection = async () => {
-  checkingConnection.value = true
-  try {
-    const result = await connectionApi.check('主页按钮联调')
-    ElMessage.success(`${result.message}（${result.receivedAction}）`)
-  } finally {
-    checkingConnection.value = false
-  }
-}
+const defaultRoutes = [
+  { destination: '重庆', days: 3, preferences: ['美食', '夜景'] },
+  { destination: '成都', days: 4, preferences: ['美食', '轻松游'] },
+  { destination: '西安', days: 3, preferences: ['历史文化', '拍照打卡'] },
+  { destination: '厦门', days: 3, preferences: ['海岛', '轻松游'] },
+]
 
 onMounted(async () => {
   try {
     const data = await homeApi.getHome()
     destinations.value = data.hotDestinations
     notes.value = data.hotNotes
-    routes.value = data.recommendedTrips
+    routes.value = data.recommendedTrips || defaultRoutes
   } catch {
     // 请求层已统一提示错误；后端尚未实现时保留空数据，避免产生未处理异常。
   } finally {
@@ -59,7 +53,6 @@ const features = [
           <div class="hero-actions">
             <el-button class="gradient-button" type="primary" size="large" @click="router.push('/ai-trip')"><el-icon><MagicStick /></el-icon>立即开始 AI 规划</el-button>
             <el-button size="large" @click="router.push('/notes')"><el-icon><Collection /></el-icon>查看热门游记</el-button>
-            <el-button size="large" :loading="checkingConnection" @click="checkConnection">测试前后端联通</el-button>
           </div>
           <div class="hero-proof"><img src="/assets/traveler-avatars.png"><b>10万+</b><span>旅行者已体验 AI 规划</span></div>
         </div>

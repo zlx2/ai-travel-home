@@ -23,6 +23,7 @@ const confirming=ref(false)
 const orderCreated=ref(false)
 const paid=ref(false)
 const result=ref<AnalyzeResult|null>(null)
+const followUpAnswers=reactive<Record<string,string>>({})
 const plan=ref<TripPlan|null>(null)
 const recommendation=ref<RecommendationContext|null>(null)
 const step=ref<BuilderStep>('INPUT')
@@ -58,6 +59,7 @@ onMounted(()=>{
 
 const activeRequirement=computed(()=>result.value?.requirement||form)
 const ready=computed(()=>result.value?.status==='READY'&&!!result.value.requirement)
+const pendingQuestions=computed(()=>result.value?.status==='NEED_MORE_INFO'?(result.value.questions||[]):[])
 const hasRental=computed(()=>{
   const text=`${userInput.value} ${form.preferences.join(' ')}`
   return /自驾|租车|落地|取车|还车|多城市|江浙沪|周边/.test(text)
@@ -99,12 +101,35 @@ const analyze=async()=>{
   orderCreated.value=false
   paid.value=false
   try{
-    result.value=await aiApi.analyze({conversationId:result.value?.conversationId,userInput:userInput.value,requirement:form})
+    const extraAnswers=Object.entries(followUpAnswers).filter(([,value])=>value.trim()).map(([field,value])=>`${field}：${value.trim()}`)
+    const requirement=showForm.value?form:result.value?.requirement
+    result.value=await aiApi.analyze({conversationId:result.value?.conversationId,userInput:userInput.value,extraAnswers,requirement})
     if(result.value.requirement)Object.assign(form,result.value.requirement)
+    if(result.value.status==='NEED_MORE_INFO'){
+      for(const question of result.value.questions||[]){
+        if(!(question.field in followUpAnswers))followUpAnswers[question.field]=''
+      }
+    }else{
+      clearFollowUpAnswers()
+    }
     step.value=ready.value?'ANALYZED':'INPUT'
   }finally{
     analyzing.value=false
   }
+}
+
+const updateFollowUpAnswer=(field:string,value:string)=>{
+  followUpAnswers[field]=value
+}
+
+const submitFollowUp=async()=>{
+  const missing=pendingQuestions.value.find(item=>item.required&&!followUpAnswers[item.field]?.trim())
+  if(missing)return ElMessage.warning(missing.question)
+  await analyze()
+}
+
+function clearFollowUpAnswers(){
+  for(const key of Object.keys(followUpAnswers))delete followUpAnswers[key]
 }
 
 const chooseDestination=async(name:string)=>{
@@ -270,8 +295,12 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
         :loading="analyzing"
         :preference-options="preferenceOptions"
         :suggestions="result?.status==='NEED_DESTINATION_CHOICE'?result.destinationSuggestions:[]"
+        :questions="pendingQuestions"
+        :follow-up-answers="followUpAnswers"
         @update:show-form="showForm=$event"
+        @update:follow-up-answer="updateFollowUpAnswer"
         @analyze="analyze"
+        @submit-follow-up="submitFollowUp"
         @choose-destination="chooseDestination"
         @apply-example="applyExample"
       />

@@ -7,6 +7,7 @@ const showRequestError=(message:string)=>{
   ElMessage.closeAll()
   ElMessage.error({message,duration:2500,showClose:true})
 }
+const shouldSuppressError=(config:any)=>Boolean(config?.suppressError)
 request.interceptors.request.use(config=>{const token=localStorage.getItem(TOKEN_KEY);if(token)config.headers.Authorization=`Bearer ${token}`;return config})
 request.interceptors.response.use(response=>{
   const body=response.data
@@ -15,7 +16,7 @@ request.interceptors.response.use(response=>{
     clearAuthStorage()
     if(!location.pathname.startsWith('/login'))location.href=`/login?redirect=${encodeURIComponent(location.pathname+location.search)}`
   }
-  showRequestError(body?.message||'请求失败')
+  if(!shouldSuppressError(response.config))showRequestError(body?.message||'请求失败')
   return Promise.reject(new Error(body?.message||'请求失败'))
-},error=>{if(error.response?.status===401){clearAuthStorage();location.href='/login'}showRequestError(error.response?.data?.message||'网络异常，请稍后重试');return Promise.reject(error)})
+},error=>{if(error.response?.status===401){clearAuthStorage();location.href='/login'}if(!shouldSuppressError(error.config))showRequestError(error.response?.data?.message||'网络异常，请稍后重试');return Promise.reject(error)})
 export default request

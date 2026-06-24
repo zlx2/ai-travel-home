@@ -18,4 +18,5 @@ export interface Trip { id:number; userId?:number; username?:string; title:strin
 export interface Note { id:number; authorId:number; authorNickname:string; authorAvatarUrl?:string; title:string; coverUrl:string; destination:string; summary:string; content:string; tags:string[]; tagIds:number[]; likeCount:number; favoriteCount:number; commentCount:number; liked?:boolean; favorited?:boolean; status:number; createTime:string; updateTime?:string }
 export interface Comment { id:number; noteId:number; noteTitle?:string; userId:number; nickname:string; avatarUrl?:string; content:string; createTime:string }
 export type AnalyzeStatus='READY'|'NEED_MORE_INFO'|'CONFLICT'|'NEED_DESTINATION_CHOICE'
-export interface AnalyzeResult { conversationId:string; status:AnalyzeStatus; requirement?:Requirement; questions?:string[]; destinationSuggestions?:Destination[]; conflicts?:{message:string;suggestion:string}[] }
+export interface AnalyzeQuestion { field:string; question:string; required:boolean }
+export interface AnalyzeResult { conversationId:string; status:AnalyzeStatus; requirement?:Requirement; questions?:AnalyzeQuestion[]; destinationSuggestions?:Destination[]; conflicts?:{message:string;suggestion:string}[] }

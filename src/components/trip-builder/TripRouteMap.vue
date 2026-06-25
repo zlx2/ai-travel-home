@@ -19,13 +19,15 @@ interface NearbyPoi {
   lat: number
 }
 
-type NearbyType = 'food' | 'hotel'
+type NearbyType = 'food' | 'night' | 'hotel'
 
 const props=defineProps<{ places:TripMapPlace[]; tip?:string }>()
+const emit=defineEmits<{ routeStats:[value:{distanceKm:number;drivingMinutes:number}] }>()
 
-const nearbyLabels:Record<NearbyType,string>={food:'美食',hotel:'酒店'}
+const nearbyLabels:Record<NearbyType,string>={food:'美食',night:'夜市',hotel:'酒店'}
 const nearbySearchConfig:Record<NearbyType,{keyword:string;type:string}>={
   food:{keyword:'美食',type:'050000'},
+  night:{keyword:'夜市',type:'050000'},
   hotel:{keyword:'酒店',type:'100000'},
 }
 
@@ -171,6 +173,7 @@ const drawDrivingRoute=async()=>{
     routeLine=new AMap.Polyline({path,isOutline:true,outlineColor:'#fff',borderWeight:2,strokeColor:'#168fe3',strokeOpacity:.96,strokeWeight:7,strokeStyle:'solid',lineJoin:'round',zIndex:80})
     map.add(routeLine)
     routeMessage.value=`${(Number(route.distance||0)/1000).toFixed(1)} km | 约 ${Math.ceil(Number(route.time||0)/60)} 分钟`
+    emit('routeStats',{distanceKm:Number((Number(route.distance||0)/1000).toFixed(1)),drivingMinutes:Math.ceil(Number(route.time||0)/60)})
   }catch(fullError){
     try{
       const segments=[]
@@ -180,6 +183,7 @@ const drawDrivingRoute=async()=>{
       const distance=segments.reduce((sum,segment)=>sum+segment.distance,0)
       const time=segments.reduce((sum,segment)=>sum+segment.time,0)
       routeMessage.value=`${(distance/1000).toFixed(1)} km | 约 ${Math.ceil(time/60)} 分钟`
+      emit('routeStats',{distanceKm:Number((distance/1000).toFixed(1)),drivingMinutes:Math.ceil(time/60)})
     }catch(segmentError){
       routeMessage.value=`路线规划失败：${segmentError instanceof Error?segmentError.message:String(segmentError||fullError)}`
     }
@@ -296,6 +300,7 @@ onBeforeUnmount(()=>{
         </button>
         <template v-if="!toolbarCollapsed">
           <button class="tool-chip" :class="{ active: activeNearbyType==='food' }" :disabled="nearbyLoading" @click="searchNearby('food')"><span class="tool-dot food"></span>美食</button>
+          <button class="tool-chip" :class="{ active: activeNearbyType==='night' }" :disabled="nearbyLoading" @click="searchNearby('night')"><span class="tool-dot night"></span>夜市</button>
           <button class="tool-chip" :class="{ active: activeNearbyType==='hotel' }" :disabled="nearbyLoading" @click="searchNearby('hotel')"><span class="tool-dot hotel"></span>酒店</button>
         </template>
         <button class="tool-chip toggle-chip" @click="toolbarCollapsed=!toolbarCollapsed">{{ toolbarCollapsed ? '展开' : '收起' }}</button>
@@ -318,4 +323,5 @@ onBeforeUnmount(()=>{
 
 <style scoped>
 .trip-route-map{overflow:hidden;align-self:start}.map-card-head{height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #edf1f5}.map-tabs{display:flex;gap:6px}.map-tabs button,.map-float-tools button,.poi-result-strip button{border:0;font:inherit;cursor:pointer}.map-tabs button{height:26px;border:1px solid #dbe5ef;border-radius:7px;padding:0 10px;color:#607086;background:#fff;font-weight:700;font-size:13px}.map-tabs .active{color:#fff;border-color:#0f9f8f;background:#0f9f8f}.map-card-head span{color:#728197;font-size:12px}.amap-wrap{position:relative;height:520px;background:#eef4f3;overflow:hidden}.amap-host{position:absolute;inset:0}.map-float-tools{position:absolute;left:14px;top:14px;z-index:20;display:flex;gap:6px;padding:6px;border-radius:10px;background:rgba(17,24,39,.52);box-shadow:0 10px 24px rgba(15,23,42,.18);backdrop-filter:blur(10px)}.tool-chip{height:28px;display:inline-flex;align-items:center;gap:5px;border-radius:7px;padding:0 9px;color:#fff;background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);font-weight:700;font-size:12px}.tool-chip.active{background:rgba(16,185,129,.88);box-shadow:none}.tool-chip:disabled{opacity:.7;cursor:wait}.tool-dot{width:8px;height:8px;border-radius:2px;display:inline-block}.tool-dot.point{background:#10b981}.tool-dot.food{background:#f59e0b}.tool-dot.hotel{background:#2563eb}.map-floating{position:absolute;top:58px;right:14px;z-index:18;min-width:138px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.9);box-shadow:0 12px 28px rgba(15,23,42,.12)}.map-floating small{display:block;color:#7b8798;margin-bottom:5px;font-size:12px}.map-floating b{color:#172033;font-size:14px}.map-state{position:absolute;inset:0;z-index:30;display:grid;place-items:center;background:rgba(248,250,252,.84);color:#475569;font-weight:800}.map-state.unavailable{color:#b91c1c}.poi-result-strip{position:absolute;left:14px;right:14px;bottom:14px;z-index:22;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.poi-result-strip button{min-width:0;text-align:left;border-radius:10px;padding:9px 11px;background:rgba(255,255,255,.9);color:#475569;box-shadow:0 10px 24px rgba(15,23,42,.12)}.poi-result-strip b,.poi-result-strip span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.poi-result-strip b{color:#172033;font-size:12px}.poi-result-strip span{margin-top:3px;font-size:11px;color:#7b8798}:global(.ai-route-marker),:global(.ai-poi-marker){width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;border:3px solid #fff;box-shadow:0 8px 18px rgba(15,23,42,.25);font-weight:900}:global(.ai-route-marker){background:#0f9f8f}:global(.ai-route-marker.active){background:#f59e0b}:global(.ai-poi-marker.food){background:#f97316}:global(.ai-poi-marker.hotel){background:#2563eb}:global(.ai-map-info){min-width:180px;padding:4px 2px;color:#172033}:global(.ai-map-info strong),:global(.ai-map-info span){display:block}:global(.ai-map-info span){margin-top:5px;color:#0f766e;font-size:12px}:global(.ai-map-info p){margin:6px 0 0;color:#64748b;font-size:12px;line-height:1.45}@media(max-width:760px){.amap-wrap{height:360px}.map-float-tools{left:10px;right:10px;overflow-x:auto}.map-floating{display:none}}
+.tool-dot.night{background:#ec4899}
 </style>

@@ -29,13 +29,30 @@ export interface DayMoment{
   description:string
   tags:string[]
   cost:number
+  costText?:string
   image:string
+  suggestedDuration?:string
+  suggestedDurationSource?:string
+  transportSuggestion?:string
+  reason?:string
+  area?:string
+  address?:string
+  lng?:number
+  lat?:number
+  openingHours?:string
+  rating?:number
+  averageCost?:number
+  businessArea?:string
+  imageUrls?:string[]
 }
 
 export interface BuilderDay{
   day:number
   title:string
   subtitle:string
+  intensity?:string
+  accommodation?:string
+  diningArea?:string
   status:DayStatus
   route:string[]
   moments:DayMoment[]
@@ -46,6 +63,9 @@ export interface BuilderDay{
     traffic:number
     other:number
     total:number
+    foodSource?:string
+    transportSource?:string
+    excludesUnknownItems?:boolean
   }
   rental:{
     enabled:boolean
@@ -61,4 +81,5 @@ export interface FinalReviewData{
   requirement:Requirement
   days:BuilderDay[]
   selectedQuote?:RentalQuote|null
+  hotelCost:number|null
 }

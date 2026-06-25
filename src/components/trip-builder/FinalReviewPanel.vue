@@ -53,10 +53,10 @@ const emit=defineEmits<{ createOrder:[]; sandboxPay:[]; back:[] }>()
 
       <article class="final-card builder-card">
         <h3>预算总览</h3>
-        <p><span>行程体验费用</span><b>¥{{ data.days.reduce((sum,day)=>sum+day.budget.total,0) }}</b></p>
+        <p><span>每日费用汇总</span><b>¥{{ data.days.reduce((sum,day)=>sum+day.budget.total,0) }}</b></p>
+        <p><span>住宿费用</span><b>{{ data.hotelCost==null?'待确认':`¥${data.hotelCost}` }}</b></p>
         <p><span>租车费用</span><b>¥{{ data.selectedQuote?.totalPrice || 0 }}</b></p>
-        <p><span>其他预估费用</span><b>¥{{ Math.max(200,data.requirement.peopleCount*160) }}</b></p>
-        <strong>预计总预算 <em>¥{{ data.days.reduce((sum,day)=>sum+day.budget.total,0)+(data.selectedQuote?.totalPrice||0)+Math.max(200,data.requirement.peopleCount*160) }}</em></strong>
+        <strong>已知费用小计 <em>¥{{ data.days.reduce((sum,day)=>sum+day.budget.total,0)+(data.hotelCost||0)+(data.selectedQuote?.totalPrice||0) }}</em></strong>
       </article>
 
       <article class="final-card builder-card traveler-card">
@@ -74,7 +74,7 @@ const emit=defineEmits<{ createOrder:[]; sandboxPay:[]; back:[] }>()
           <li><el-icon><Check/></el-icon><span>可免费取消<small>下单后 24 小时内可免费取消</small></span></li>
           <li><el-icon><Check/></el-icon><span>安全支付<small>您的信息将受到安全保护</small></span></li>
         </ul>
-        <div class="pay-amount"><span>支付金额</span><b>¥{{ data.days.reduce((sum,day)=>sum+day.budget.total,0)+(data.selectedQuote?.totalPrice||0)+Math.max(200,data.requirement.peopleCount*160) }}</b></div>
+        <div class="pay-amount"><span>已知费用小计</span><b>¥{{ data.days.reduce((sum,day)=>sum+day.budget.total,0)+(data.hotelCost||0)+(data.selectedQuote?.totalPrice||0) }}</b></div>
         <el-button class="create-btn" type="primary" :loading="saving" @click="emit('createOrder')">{{ orderCreated ? '行程订单已创建' : '保存行程并创建订单' }}</el-button>
         <el-button class="sandbox-btn" :disabled="!orderCreated || paid" @click="emit('sandboxPay')"><el-icon><CreditCard/></el-icon>{{ paid ? '沙箱支付已触发' : '沙箱支付（测试）' }}</el-button>
       </article>

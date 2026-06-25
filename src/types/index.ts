@@ -3,9 +3,10 @@ export interface PageResult<T> { list: T[]; total: number; pageNum: number; page
 export interface UserInfo { id:number; username:string; nickname:string; email:string; avatarUrl?:string; role:number; status:number; createTime?:string }
 export interface Destination { id:number; name:string; coverUrl:string; description:string; tags:string[]; heat:number; status?:number; province?:string; city?:string; createTime?:string }
 export interface Requirement { departure:string; destination:string; days:number; budget:number; budgetType:string; peopleCount:number; preferences:string[]; pace:string; avoidances:string[]; travelDate?:string }
-export interface Activity { time:string; title:string; description:string; tags:string[]; cost:number }
-export interface TripDay { day:number; title:string; activities:Activity[]; food:string[]; budget:number }
-export interface TripPlan { title:string; destination:string; days:number; summary:string; dailyPlans:TripDay[]; accommodation:string; budgetSummary:{transport:number;hotel:number;food:number;tickets:number;total:number}; tips:string[] }
+export interface Activity { time:string; title:string; description:string; tags:string[]; cost:number; costText?:string; suggestedDuration?:string; suggestedDurationSource?:string; transportSuggestion?:string; reason?:string; area?:string; address?:string; lng?:number; lat?:number; openingHours?:string; rating?:number; averageCost?:number; businessArea?:string; imageUrls?:string[] }
+export interface DayEstimatedCost { tickets:number; food:number; transport:number; total:number; ticketSource?:string; foodSource?:string; transportSource?:string; excludesUnknownItems?:boolean }
+export interface TripDay { day:number; title:string; activities:Activity[]; food:string[]; budget:number; estimatedCost?:DayEstimatedCost; intensity?:string; accommodation?:string; diningArea?:string; routeSummary?:string; tips?:string[] }
+export interface TripPlan { title:string; destination:string; days:number; summary:string; dailyPlans:TripDay[]; accommodation:string; budgetSummary:{transport:number;hotel:number|null;food:number;tickets:number;total:number;excludesUnknownItems?:boolean}; tips:string[] }
 export interface RentalStore { storeCode:string; displayName:string; address:string; lng?:string; lat?:string; distanceMeters?:number; amapPoiName?:string }
 export interface TravelMode { mode:string; recommended:boolean; reason:string; tips:string[] }
 export interface ScenicSpot { name:string; area:string; reason:string; suggestedDuration:string; suitableForSelfDrive:boolean }

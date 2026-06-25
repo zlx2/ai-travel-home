@@ -74,8 +74,25 @@ const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.
   title:moment.title,
   time:moment.time.split('-')[0],
   desc:moment.description,
-  ...coordinateForPlace(moment.title,activeRequirement.value.destination,index),
+  ...(moment.lng&&moment.lat?{lng:moment.lng,lat:moment.lat}:coordinateForPlace(moment.title,activeRequirement.value.destination,index)),
 })):[])
+
+const updateRouteStats=(stats:{distanceKm:number;drivingMinutes:number})=>{
+  const day=currentDay.value
+  if(!day)return
+  const visitMinutes=day.moments.reduce((sum,moment)=>sum+durationToMinutes(moment.suggestedDuration),0)
+  const totalMinutes=visitMinutes+stats.drivingMinutes
+  day.rental.mileage=stats.distanceKm
+  day.rental.duration=`约 ${Math.max(1,Math.round(totalMinutes/30)/2)} 小时`
+}
+
+function durationToMinutes(value?:string){
+  if(!value)return 90
+  const hour=value.match(/([\d.]+)\s*小时/)
+  if(hour)return Number(hour[1])*60
+  const minute=value.match(/(\d+)\s*分钟/)
+  return minute?Number(minute[1]):90
+}
 
 const quoteOptions=computed<RentalQuote[]>(()=>{
   const req=activeRequirement.value
@@ -195,20 +212,31 @@ const startDayBuilding=async()=>{
   step.value='DAY_BUILDING'
   try{
     const data=await aiApi.generate(result.value.conversationId,result.value.requirement)
+    assertTripPlanComplete(data.tripPlan,result.value.requirement.days)
     plan.value=data.tripPlan
     recommendation.value=data.recommendationContext||null
-    days.value=createBuilderDays(data.tripPlan,result.value.requirement,!!selectedQuote.value)
+    days.value=createBuilderDays(data.tripPlan,result.value.requirement,hasRental.value&&!!selectedQuote.value)
   }catch(error){
-    const fallbackPlan=createFallbackTripPlan(result.value.requirement)
-    plan.value=fallbackPlan
+    plan.value=null
     recommendation.value=null
-    days.value=createBuilderDays(fallbackPlan,result.value.requirement,!!selectedQuote.value)
-    ElMessage.warning('生成接口暂不可用，已先展示演示行程样式')
+    days.value=[]
+    step.value='INPUT'
+    ElMessage.error(error instanceof Error?error.message:'后端暂时没有返回可用行程，请检查 /ai/trips/generate 接口')
   }finally{
     currentDayIndex.value=days.value.findIndex(day=>day.status==='active')
     if(currentDayIndex.value<0)currentDayIndex.value=0
     setTimeout(()=>document.querySelector('.day-builder')?.scrollIntoView({behavior:'smooth',block:'start'}),100)
     generating.value=false
+  }
+}
+
+function assertTripPlanComplete(tripPlan:TripPlan,expectedDays:number){
+  if(tripPlan.dailyPlans.length!==expectedDays){
+    throw new Error(`行程天数不足：需要 ${expectedDays} 天，实际返回 ${tripPlan.dailyPlans.length} 天`)
+  }
+  const incompleteDay=tripPlan.dailyPlans.find(day=>day.activities.length<2)
+  if(incompleteDay){
+    throw new Error(`第 ${incompleteDay.day} 天景点不足：至少需要 2 个`)
   }
 }
 
@@ -288,33 +316,42 @@ function coverForDestination(destination:string){
 
 function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean):BuilderDay[]{
   const image=coverForDestination(requirement.destination)
-  const fallbackRoutes=['城市地标','本地餐厅','文化街区','夜间漫步']
   return tripPlan.dailyPlans.map((day,index)=>{
     const activities=day.activities.length?day.activities:[]
     const route=activities.map(item=>item.title.split('→')[0].trim()).filter(Boolean).slice(0,5)
-    while(route.length<4)route.push(fallbackRoutes[route.length])
-    const foodCost=Math.max(120,requirement.peopleCount*75)
-    const tickets=Math.max(0,activities.reduce((sum,item)=>sum+(item.cost||0),0))
-    const traffic=rentalEnabled?50:30
-    const other=50
+    const tickets=day.estimatedCost?.tickets??Math.max(0,activities.reduce((sum,item)=>sum+(item.cost||0),0)*requirement.peopleCount)
+    const foodCost=day.estimatedCost?.food??Math.max(120,requirement.peopleCount*75)
+    const traffic=day.estimatedCost?.transport??requirement.peopleCount*40
+    const other=0
+    const dayFood=Array.isArray(day.food)?day.food:[day.food].filter(Boolean)
+    const moments=activities.map((activity,activityIndex)=>buildMoment(`activity-${activityIndex}`,periodForIndex(activityIndex),timeForIndex(activityIndex),activity,image,['景点']))
     return {
       day:day.day,
       title:day.title||`${requirement.destination}精选体验`,
-      subtitle:index===0?'从城市核心印象开始，保留足够步行和休息时间。':'在自然、文化与本地烟火之间，感受更松弛的一天。',
+      subtitle:day.routeSummary||day.accommodation||tripPlan.accommodation||'后端已生成当天主题、景点顺序与推荐理由。',
+      intensity:day.intensity||requirement.pace,
+      accommodation:day.accommodation||tripPlan.accommodation,
+      diningArea:day.diningArea||dayFood.join('、'),
       status:index===0?'active':'pending',
       route,
-      moments:[
-        buildMoment('morning','上午','09:00-12:00',activities[0],image,['景点','步行游览']),
-        {key:'lunch',period:'中午',time:'12:00-13:30',title:day.food[0]||`${requirement.destination}本地餐厅`,description:'安排顺路餐厅，减少绕行，把体力留给下午体验。',tags:['本地风味','轻松用餐'],cost:foodCost,image:'/assets/map-card.jpg'},
-        buildMoment('afternoon','下午','14:00-17:30',activities[1]||activities[0],image,['文化体验','慢游']),
-        buildMoment('evening','晚上','18:00-21:00',activities[2]||activities[0],image,['夜间散步','烟火气']),
-      ],
-      foods:day.food,
-      budget:{tickets,food:foodCost,traffic,other,total:tickets+foodCost+traffic+other},
-      rental:{enabled:rentalEnabled,departure:`${requirement.destination}核心范围`,duration:rentalEnabled?'约 8 小时':'按需短途',mileage:rentalEnabled?68:18,fuelCost:traffic},
+      moments,
+      foods:dayFood,
+      budget:{
+        tickets,
+        food:foodCost,
+        traffic,
+        other,
+        total:day.estimatedCost?.total??tickets+foodCost+traffic,
+        foodSource:day.estimatedCost?.foodSource,
+        transportSource:day.estimatedCost?.transportSource,
+        excludesUnknownItems:day.estimatedCost?.excludesUnknownItems,
+      },
+      rental:{enabled:rentalEnabled,departure:`${requirement.destination}核心范围`,duration:'地图计算中',mileage:0,fuelCost:traffic},
       tips:[
-        '热门景点建议错峰出行，上午优先安排核心体验。',
-        requirement.pace==='LIGHT'?'已按轻松节奏预留休息和交通缓冲。':'景点间预留交通缓冲，避免连续赶路。',
+        day.intensity?`当天强度：${day.intensity}`:'后端未返回当天强度，前端暂按需求节奏展示。',
+        day.diningArea||dayFood.length?`餐饮建议：${day.diningArea||dayFood.join('、')}`:'后端未返回当天餐饮区域建议。',
+        day.accommodation||tripPlan.accommodation?`住宿建议：${day.accommodation||tripPlan.accommodation}`:'后端未返回住宿区域建议。',
+        ...(day.tips||[]),
         rentalEnabled?'自驾当天请提前确认停车场与限行规则。':'夜间返程优先选择网约车或地铁主线。',
       ],
     }
@@ -330,8 +367,30 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     description:activity?.description||'保留目的地代表性体验，同时控制步行和换乘压力。',
     tags:activity?.tags?.length?activity.tags:tags,
     cost:Number(activity?.cost||0),
+    costText:activity?.costText,
     image,
+    suggestedDuration:activity?.suggestedDuration,
+    suggestedDurationSource:activity?.suggestedDurationSource,
+    transportSuggestion:activity?.transportSuggestion,
+    reason:activity?.reason,
+    area:activity?.area,
+    address:activity?.address,
+    lng:activity?.lng,
+    lat:activity?.lat,
+    openingHours:activity?.openingHours,
+    rating:activity?.rating,
+    averageCost:activity?.averageCost,
+    businessArea:activity?.businessArea,
+    imageUrls:activity?.imageUrls,
   }
+}
+
+function periodForIndex(index:number){
+  return ['上午','中午','下午','晚上'][index]||`第 ${index+1} 站`
+}
+
+function timeForIndex(index:number){
+  return ['09:00','11:30','14:30','18:30'][index]||''
 }
 
 function coordinateForPlace(title:string,destination:string,index:number){
@@ -377,38 +436,6 @@ function coordinateForPlace(title:string,destination:string,index:number){
   return (city?fallback[city]:fallback.重庆)[index%4]
 }
 
-function createFallbackTripPlan(requirement:Requirement):TripPlan{
-  const titles=['抵达适应 + 城市初印象','自然风光 + 轻户外体验','城市慢生活 + 返程预留']
-  const spots=[
-    [`${requirement.destination}城市地标`,`${requirement.destination}特色餐饮街区`,`${requirement.destination}历史文化街区`,'夜间漫步'],
-    ['湖山风景区','本地风味餐厅','博物馆 / 展览馆','江边夜景'],
-    ['老街咖啡馆','伴手礼街区','城市公园','返程准备'],
-  ]
-  return {
-    title:`${requirement.destination} ${requirement.days} 日漫游`,
-    destination:requirement.destination,
-    days:requirement.days,
-    summary:'演示行程用于先确认页面效果，后续可替换为后端真实生成结果。',
-    accommodation:`${requirement.destination}核心城区舒适酒店`,
-    tips:['当前为前端演示数据。'],
-    budgetSummary:{transport:360,hotel:1200,food:900,tickets:480,total:2940},
-    dailyPlans:Array.from({length:Math.max(1,requirement.days)},(_,index)=>{
-      const dayNo=index+1
-      const route=spots[index%spots.length]
-      return {
-        day:dayNo,
-        title:titles[index%titles.length],
-        food:[route[1]],
-        budget:980,
-        activities:[
-          {time:'09:00',title:route[0],description:'从轻松、有代表性的地点开始，先建立城市印象。',tags:['景点','慢游'],cost:0},
-          {time:'14:30',title:route[2],description:'下午安排文化或自然体验，控制步行强度。',tags:['文化体验','轻松'],cost:80},
-          {time:'19:00',title:route[3],description:'晚餐后散步看夜景，结束充实但不赶的一天。',tags:['夜景','散步'],cost:60},
-        ],
-      }
-    }),
-  }
-}
 </script>
 
 <template>
@@ -559,14 +586,14 @@ function createFallbackTripPlan(requirement:Requirement):TripPlan{
         <div class="builder-main">
           <DayPlanCard
             :day="currentDay"
-            :selected-quote="selectedQuote"
+            :selected-quote="hasRental ? selectedQuote : null"
             :confirming="confirming"
             @confirm="confirmCurrentDay"
             @regenerate="regenerateCurrentDay"
             @revise="reviseVisible=true"
           />
           <div class="map-workbench">
-            <TripRouteMap :places="currentMapPlaces" :tip="currentDay.tips[1]"/>
+            <TripRouteMap :places="currentMapPlaces" :tip="currentDay.tips[1]" @route-stats="updateRouteStats"/>
             <section class="map-control-panel builder-card">
               <div class="map-progress-dots" aria-label="行程进度">
                 <template v-for="(day,index) in days" :key="day.day">
@@ -592,7 +619,7 @@ function createFallbackTripPlan(requirement:Requirement):TripPlan{
 
       <FinalReviewPanel
         v-if="step==='FINAL_REVIEW'||step==='ORDER_CREATED'||step==='PAID'"
-        :data="{requirement:activeRequirement,days,selectedQuote}"
+        :data="{requirement:activeRequirement,days,selectedQuote:hasRental?selectedQuote:null,hotelCost:plan?.budgetSummary.hotel??null}"
         :saving="saving"
         :order-created="orderCreated"
         :paid="paid"

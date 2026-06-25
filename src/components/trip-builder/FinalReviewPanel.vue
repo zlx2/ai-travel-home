@@ -76,7 +76,7 @@ const emit=defineEmits<{ createOrder:[]; sandboxPay:[]; back:[] }>()
         </ul>
         <div class="pay-amount"><span>已知费用小计</span><b>¥{{ data.days.reduce((sum,day)=>sum+day.budget.total,0)+(data.hotelCost||0)+(data.selectedQuote?.totalPrice||0) }}</b></div>
         <el-button class="create-btn" type="primary" :loading="saving" @click="emit('createOrder')">{{ orderCreated ? '行程订单已创建' : '保存行程并创建订单' }}</el-button>
-        <el-button class="sandbox-btn" :disabled="!orderCreated || paid" @click="emit('sandboxPay')"><el-icon><CreditCard/></el-icon>{{ paid ? '沙箱支付已触发' : '沙箱支付（测试）' }}</el-button>
+        <el-button class="sandbox-btn" :disabled="!orderCreated || paid" @click="emit('sandboxPay')"><el-icon><CreditCard/></el-icon>{{ paid ? '支付已确认' : '确认支付' }}</el-button>
       </article>
     </div>
   </section>

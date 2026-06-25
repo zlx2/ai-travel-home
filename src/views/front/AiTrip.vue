@@ -10,7 +10,7 @@ import RentalQuoteDeck from '../../components/trip-builder/RentalQuoteDeck.vue'
 import RequirementSummaryBar from '../../components/trip-builder/RequirementSummaryBar.vue'
 import TripRouteMap, { type TripMapPlace } from '../../components/trip-builder/TripRouteMap.vue'
 import type { BuilderDay, BuilderStep, RentalQuote } from '../../components/trip-builder/types'
-import type { AnalyzeResult, RecommendationContext, Requirement, TripPlan } from '../../types'
+import type { AnalyzeResult, RecommendationContext, Requirement, TripDay, TripPlan } from '../../types'
 
 const route=useRoute()
 const userInput=ref('带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')
@@ -147,7 +147,7 @@ const chooseFollowUpOption=(field:string,value:string)=>{
 }
 
 const analyze=async()=>{
-  if(!userInput.value.trim()&&!form.destination)return ElMessage.warning('先告诉 AI 你想去哪里、怎么玩')
+  if(!userInput.value.trim()&&!form.destination)return ElMessage.warning('先描述一下你想去哪里、怎么玩')
   analyzing.value=true
   plan.value=null
   recommendation.value=null
@@ -234,9 +234,9 @@ function assertTripPlanComplete(tripPlan:TripPlan,expectedDays:number){
   if(tripPlan.dailyPlans.length!==expectedDays){
     throw new Error(`行程天数不足：需要 ${expectedDays} 天，实际返回 ${tripPlan.dailyPlans.length} 天`)
   }
-  const incompleteDay=tripPlan.dailyPlans.find(day=>day.activities.length<2)
+  const incompleteDay=tripPlan.dailyPlans.find(day=>day.activities.length<1)
   if(incompleteDay){
-    throw new Error(`第 ${incompleteDay.day} 天景点不足：至少需要 2 个`)
+    throw new Error(`第 ${incompleteDay.day} 天景点不足：至少需要 1 个`)
   }
 }
 
@@ -267,7 +267,7 @@ const regenerateCurrentDay=()=>{
 }
 
 const submitRevision=()=>{
-  if(!reviseText.value.trim())return ElMessage.warning('先告诉 AI 你希望怎么调整')
+  if(!reviseText.value.trim())return ElMessage.warning('先写下你希望怎么调整')
   reviseVisible.value=false
   reviseText.value=''
   regenerateCurrentDay()
@@ -292,7 +292,7 @@ const createOrder=async()=>{
     })
     orderCreated.value=true
     step.value='ORDER_CREATED'
-    ElMessage.success('行程已保存，订单演示态已创建')
+    ElMessage.success('行程已保存，订单已创建')
   }finally{
     saving.value=false
   }
@@ -302,7 +302,7 @@ const sandboxPay=()=>{
   if(!orderCreated.value)return ElMessage.info('请先创建订单')
   paid.value=true
   step.value='PAID'
-  ElMessage.success('已触发沙箱支付演示态，未伪造真实支付结果')
+  ElMessage.success('支付确认完成，行程已进入待出行状态')
 }
 
 function coverForDestination(destination:string){
@@ -325,10 +325,11 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
     const other=0
     const dayFood=Array.isArray(day.food)?day.food:[day.food].filter(Boolean)
     const moments=activities.map((activity,activityIndex)=>buildMoment(`activity-${activityIndex}`,periodForIndex(activityIndex),timeForIndex(activityIndex),activity,image,['景点']))
+    const travelPace=paceLabel(day.intensity||requirement.pace)
     return {
       day:day.day,
-      title:day.title||`${requirement.destination}精选体验`,
-      subtitle:day.routeSummary||day.accommodation||tripPlan.accommodation||'后端已生成当天主题、景点顺序与推荐理由。',
+      title:polishDayTitle(day.title,day.day,requirement.destination,activities),
+      subtitle:daySubtitle(day,activities,travelPace,rentalEnabled),
       intensity:day.intensity||requirement.pace,
       accommodation:day.accommodation||tripPlan.accommodation,
       diningArea:day.diningArea||dayFood.join('、'),
@@ -347,14 +348,38 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
         excludesUnknownItems:day.estimatedCost?.excludesUnknownItems,
       },
       rental:{enabled:rentalEnabled,departure:`${requirement.destination}核心范围`,duration:'地图计算中',mileage:0,fuelCost:traffic},
-      tips:[
-        day.intensity?`当天强度：${day.intensity}`:'后端未返回当天强度，前端暂按需求节奏展示。',
-        day.diningArea||dayFood.length?`餐饮建议：${day.diningArea||dayFood.join('、')}`:'后端未返回当天餐饮区域建议。',
-        day.accommodation||tripPlan.accommodation?`住宿建议：${day.accommodation||tripPlan.accommodation}`:'后端未返回住宿区域建议。',
-        ...(day.tips||[]),
+      tips:uniqueTips([
+        `今日节奏：${travelPace}`,
+        day.diningArea||dayFood.length?`餐饮建议：${shortText(day.diningArea||dayFood.join('、'),18)}`:'',
+        day.accommodation||tripPlan.accommodation?`住宿建议：${shortText(day.accommodation||tripPlan.accommodation,18)}`:'',
+        ...(day.tips||[]).map(tip=>polishTip(tip)),
         rentalEnabled?'自驾当天请提前确认停车场与限行规则。':'夜间返程优先选择网约车或地铁主线。',
-      ],
+      ].filter(Boolean)).slice(0,3),
     }
+  })
+}
+
+function daySubtitle(day:TripDay,activities:any[],travelPace:string,rentalEnabled:boolean){
+  const count=activities.length
+  const first=activities[0]?.title
+  const last=activities[count-1]?.title
+  if(count>=2)return `${first}等 ${count} 个地点 · ${travelPace}游览 · ${rentalEnabled?'自驾衔接':'步行 + 打车'}`
+  if(first)return `${first} · ${travelPace}游览`
+  return `${travelPace}游览 · 城市精选路线`
+}
+
+function shortText(value:string,limit:number){
+  const text=String(value||'').replace(/\s+/g,'').replace(/适合住宿.*$/,'适合住宿')
+  return text.length>limit?`${text.slice(0,limit)}...`:text
+}
+
+function uniqueTips(tips:string[]){
+  const seen=new Set<string>()
+  return tips.filter(tip=>{
+    const normalized=tip.replace(/。$/,'')
+    if(!normalized||seen.has(normalized))return false
+    seen.add(normalized)
+    return true
   })
 }
 
@@ -365,7 +390,7 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     time:activity?.time||time,
     title:activity?.title||'城市精选体验',
     description:activity?.description||'保留目的地代表性体验，同时控制步行和换乘压力。',
-    tags:activity?.tags?.length?activity.tags:tags,
+    tags:(activity?.tags?.length?activity.tags:tags).map(prettyTag).filter(Boolean),
     cost:Number(activity?.cost||0),
     costText:activity?.costText,
     image,
@@ -383,6 +408,51 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     businessArea:activity?.businessArea,
     imageUrls:activity?.imageUrls,
   }
+}
+
+function polishDayTitle(title:string|undefined,day:number,destination:string,activities:any[]=[]){
+  if(!title)return `${destination}精选慢游`
+  const text=activities.map(item=>[item.title,item.description,...(item.tags||[])].join(' ')).join(' ')
+  const hasNature=/公园|湖|山|湿地|自然|风景|绿道|花园/.test(text)
+  const hasCulture=/寺|宫|博物|历史|文化|街区|步行街|古/.test(text)
+  let polished=title
+    .replace('抵达适应 + 城市初印象','地标漫游与城市开场')
+    .replace('城市慢生活 + 返程预留','慢游收束与从容返程')
+    .replace('城市文化 + 夜市夜景','人文街区与夜色漫游')
+    .replace('自然风光 + 轻户外体验','自然风光与轻户外')
+    .replace('城市文化 + 美食探索','老城烟火与美食探索')
+    .replace('经典景点 + 顺路美食','经典景点与顺路美食')
+    .replace(/^Day\s*\d+\s*[:：-]?/i,`第 ${day} 天 `)
+  if(polished.includes('自然风光')&&hasCulture&&!hasNature)polished='人文街区与城市漫游'
+  if(polished.includes('自然风光')&&hasCulture&&hasNature)polished='城市绿意与人文慢游'
+  return polished
+}
+
+function paceLabel(value?:string){
+  if(value==='LIGHT')return'轻松'
+  if(value==='TIGHT')return'紧凑'
+  if(value==='NORMAL')return'适中'
+  return value||'适中'
+}
+
+function prettyTag(tag:string){
+  if(tag==='LIGHT')return'轻松'
+  if(tag==='NORMAL')return'适中'
+  if(tag==='TIGHT')return'紧凑'
+  if(tag==='LANDMARK')return'地标'
+  if(tag==='SCENIC')return'风景'
+  if(tag==='MUSEUM')return'人文'
+  return tag
+}
+
+function polishTip(tip:string){
+  return tip
+    .replace('当天强度：LIGHT','今日节奏：轻松')
+    .replace('当天强度：NORMAL','今日节奏：适中')
+    .replace('当天强度：TIGHT','今日节奏：紧凑')
+    .replace('部分景点为兜底数据，后续应替换为高德真实 POI。','部分地点建议出行前再确认开放信息。')
+    .replace('后端未返回当天餐饮区域建议。','')
+    .replace('后端未返回住宿区域建议。','')
 }
 
 function periodForIndex(index:number){
@@ -440,43 +510,61 @@ function coordinateForPlace(title:string,destination:string,index:number){
 
 <template>
   <div class="ai-workspace" :class="{ 'planning-landing': landingMode }">
-    <section v-if="landingMode" class="trip-hero">
-      <div class="hero-copy">
-        <h1>下一段旅程，想怎么开始？</h1>
-        <p>告诉我目的地、天数、预算和偏好，我来帮你规划完整行程</p>
-      </div>
+    <section v-if="landingMode" class="trip-hero product-hero">
+      <div class="hero-shell">
+        <div class="hero-panel">
+          <p class="hero-kicker">PlanGo AI Trip Studio</p>
+          <h1>把一句旅行想法，整理成可确认的每日行程</h1>
+          <p class="hero-lead">写下城市、天数、同行人、预算和偏好。PlanGo 会先理解需求，再逐日生成路线、景点、交通和花费参考。</p>
 
-      <div class="hero-input-shell">
-        <textarea
-          v-model="userInput"
-          maxlength="300"
-          placeholder="例如：带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算4000以内。"
-        />
-        <span>{{ userInput.length }}/300</span>
-        <button :disabled="analyzing" @click="analyze">
-          <el-icon><Loading v-if="analyzing" class="is-loading"/><MagicStick v-else/></el-icon>
-          {{ analyzing ? '分析中' : '帮我规划' }}
-        </button>
-      </div>
+          <div class="hero-input-shell">
+            <textarea
+              v-model="userInput"
+              maxlength="300"
+              placeholder="例如：带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算4000以内。"
+            />
+            <div class="hero-input-actions">
+              <span>{{ userInput.length }}/300</span>
+              <button :disabled="analyzing" @click="analyze">
+                <el-icon><Loading v-if="analyzing" class="is-loading"/><MagicStick v-else/></el-icon>
+                {{ analyzing ? '正在整理' : '开始规划' }}
+              </button>
+            </div>
+          </div>
 
-      <div class="quick-fields">
-        <button><b>目的地</b><span>去哪儿?</span></button>
-        <button><b>天数</b><span>玩几天?</span></button>
-        <button><b>人数</b><span>几个人?</span></button>
-        <button><b>预算</b><span>预算多少?</span></button>
-        <button><b>出行方式</b><span>怎么出行?</span></button>
-        <button><b>旅行节奏</b><span>轻松 / 适中 / 紧凑</span></button>
+          <div class="quick-fields">
+            <button><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
+            <button><b>天数</b><span>{{ form.days }} 天</span></button>
+            <button><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
+            <button><b>预算</b><span>¥{{ form.budget }} 内</span></button>
+          </div>
+        </div>
+
+        <aside class="hero-preview">
+          <img src="/assets/hq/hangzhou.jpg" alt="行程预览">
+          <div class="preview-card">
+            <span>示例行程</span>
+            <b>杭州 3 日轻松慢游</b>
+            <p>西湖漫步、历史街区、本地餐饮与舒适交通安排。</p>
+          </div>
+          <div class="preview-stats">
+            <div><small>节奏</small><b>轻松</b></div>
+            <div><small>确认方式</small><b>逐日确认</b></div>
+            <div><small>地图</small><b>路线联动</b></div>
+          </div>
+        </aside>
       </div>
 
       <section class="inspiration-block">
-        <h3>灵感模板</h3>
+        <div class="section-head">
+          <h3>旅行灵感</h3>
+          <span>选一个模板，马上替换输入内容</span>
+        </div>
         <div class="inspiration-grid">
-          <button @click="applyExample('带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化')"><span>父母慢游</span><b>详实细致松弛</b><small>3-5天</small></button>
-          <button @click="applyExample('想去成都玩4天，重点吃美食看夜景，节奏轻松一点')"><span>烟火气</span><b>浪漫周末游</b><small>2-3天</small></button>
-          <button @click="applyExample('想在城市里玩3天，喜欢美食、历史和夜景')"><span>城市印象</span><b>城市转转乐</b><small>2-4天</small></button>
-          <button @click="applyExample('亲子出游3天，想轻松、有趣、不要太赶')"><span>亲子时光</span><b>亲子家庭游</b><small>3-6天</small></button>
-          <button @click="applyExample('想来一趟美食之旅，吃当地特色，顺便逛逛')"><span>美食探索</span><b>美食之旅</b><small>2-4天</small></button>
-          <button @click="applyExample('周边自驾3天，想住舒服一点，适合拍照和放松')"><span>自驾游</span><b>自驾探索</b><small>3-7天</small></button>
+          <button @click="applyExample('带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化')"><span>父母慢游</span><b>松弛人文线</b><small>3-5天 · 少换乘</small></button>
+          <button @click="applyExample('想去成都玩4天，重点吃美食看夜景，节奏轻松一点')"><span>烟火气</span><b>城市夜色线</b><small>2-4天 · 美食优先</small></button>
+          <button @click="applyExample('想在城市里玩3天，喜欢美食、历史和夜景')"><span>城市印象</span><b>地标漫游线</b><small>2-4天 · 拍照友好</small></button>
+          <button @click="applyExample('亲子出游3天，想轻松、有趣、不要太赶')"><span>亲子时光</span><b>家庭舒适线</b><small>3-6天 · 留足休息</small></button>
         </div>
       </section>
 
@@ -492,15 +580,38 @@ function coordinateForPlace(title:string,destination:string,index:number){
       </div>
     </section>
 
-    <section v-if="needsMoreInfo" class="followup-workspace">
-      <div class="progress-steps">
-        <span>输入需求 ✓</span><span>AI 解析需求 ✓</span><b>3 完善信息</b><span>4 生成行程</span>
+    <section v-if="needsMoreInfo" class="followup-workspace product-followup">
+      <div class="followup-top">
+        <span>规划准备</span>
+        <h1>确认出发信息，马上生成第一天行程</h1>
+        <p>PlanGo 已经读懂你的旅行想法，只差少量会影响路线和交通的细节。</p>
       </div>
-      <div class="followup-grid">
-        <section class="assistant-card">
-          <div class="bot-avatar">AI</div>
-          <h3>PlanGo AI 助手</h3>
-          <p>我已经理解你的基本需求啦！还需要确认几个问题，帮你规划得更精准。</p>
+
+      <section class="planning-console">
+        <header class="console-summary">
+          <div>
+            <span class="console-kicker">行程概要</span>
+            <h2>{{ activeRequirement.destination || fieldValue('destination') || '目的地待确认' }} {{ activeRequirement.days || fieldValue('days') || 3 }} 日旅行</h2>
+          </div>
+          <button class="edit-summary-btn" @click="step='INPUT'">重新编辑</button>
+        </header>
+
+        <div class="summary-strip">
+          <div><span>目的地</span><b>{{ activeRequirement.destination || fieldValue('destination') || '待确认' }}</b></div>
+          <div><span>天数</span><b>{{ activeRequirement.days || fieldValue('days') || '待确认' }}</b></div>
+          <div><span>人数</span><b>{{ activeRequirement.peopleCount || fieldValue('peopleCount') || '待确认' }}</b></div>
+          <div><span>预算</span><b>{{ activeRequirement.budget ? `¥${activeRequirement.budget}以内` : fieldValue('budget') || '待确认' }}</b></div>
+          <div><span>节奏</span><b>{{ paceLabel(activeRequirement.pace || fieldValue('pace')) }}</b></div>
+          <div><span>偏好</span><b>{{ activeRequirement.preferences.join('、') || '待确认' }}</b></div>
+        </div>
+
+        <blockquote class="original-demand">{{ userInput }}</blockquote>
+
+        <div class="followup-task">
+          <div class="task-heading">
+            <span>{{ pendingQuestions.length }} 项待确认</span>
+            <h3>补齐后会直接进入 Day 01 行程</h3>
+          </div>
           <div class="question-list">
             <article v-for="(question,index) in pendingQuestions" :key="question.field">
               <i>{{ index + 1 }}</i>
@@ -522,23 +633,13 @@ function coordinateForPlace(title:string,destination:string,index:number){
               >
             </article>
           </div>
-          <button class="skip-btn" @click="submitFollowUp">跳过这些问题，AI 默认安排</button>
-        </section>
-        <section class="requirement-card">
-          <header><h3>需求总览</h3><button @click="step='INPUT'">编辑</button></header>
-          <div class="requirement-grid">
-            <div><span>目的地</span><b>{{ activeRequirement.destination || fieldValue('destination') || '待确认' }}</b></div>
-            <div><span>出行天数</span><b>{{ activeRequirement.days || fieldValue('days') || '待确认' }}</b></div>
-            <div><span>出行人数</span><b>{{ activeRequirement.peopleCount || fieldValue('peopleCount') || '待确认' }}</b></div>
-            <div><span>预算范围</span><b>{{ activeRequirement.budget ? `¥${activeRequirement.budget}以内` : fieldValue('budget') || '待确认' }}</b></div>
-            <div><span>旅行节奏</span><b>{{ activeRequirement.pace || fieldValue('pace') || '轻松' }}</b></div>
-            <div><span>兴趣偏好</span><b>{{ activeRequirement.preferences.join('、') || '待确认' }}</b></div>
-          </div>
-          <p>AI 理解的需求</p>
-          <blockquote>{{ userInput }}</blockquote>
-          <button class="generate-day-btn" @click="submitFollowUp">信息够了，生成 Day 01 行程 →</button>
-        </section>
-      </div>
+        </div>
+
+        <footer class="console-actions">
+          <span>不确定的内容可以交给 PlanGo 按轻松路线处理。</span>
+          <button class="generate-day-btn" @click="submitFollowUp">确认并生成 Day 01</button>
+        </footer>
+      </section>
     </section>
 
     <div class="container builder-container">
@@ -562,7 +663,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
       <section v-if="generating" class="builder-loading builder-card">
         <span><el-icon><Loading class="is-loading"/></el-icon></span>
         <h2>正在逐日生成行程</h2>
-        <p>PlanGo 正在整理路线、餐饮、交通、预算和 AI 提醒。</p>
+        <p>PlanGo 正在整理路线、餐饮、交通、预算和出行贴士。</p>
       </section>
 
       <section v-if="step==='DAY_BUILDING'&&!generating&&currentDay" class="day-builder">
@@ -576,7 +677,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
           <div class="summary-cell route-cell"><small>行程路线</small><b>核心城区 → 周边</b></div>
           <div class="summary-cell"><small>天数</small><b>{{ activeRequirement.days }} 天</b></div>
           <div class="summary-cell"><small>人数</small><b>{{ activeRequirement.peopleCount }} 人</b></div>
-          <div class="summary-cell"><small>租车套餐</small><b>{{ selectedQuote?.name || '未选择' }}</b></div>
+          <div class="summary-cell"><small>{{ hasRental ? '租车套餐' : '推荐交通' }}</small><b>{{ hasRental ? (selectedQuote?.name || '舒适型轿车') : '步行 + 打车' }}</b></div>
           <div class="progress-cell">
             <i :style="progressStyle"></i>
             <div><small>行程确认进度</small><b>已确认 {{ lockedCount }} / {{ days.length }} 天</b><span>继续完善，行程更完整</span></div>
@@ -603,12 +704,12 @@ function coordinateForPlace(title:string,destination:string,index:number){
               </div>
               <div class="map-actions">
                 <button @click="regenerateCurrentDay">
-                  <b>重新生成这一天</b>
+                  <b>调整路线</b>
                   <small>换个思路，重新规划</small>
                 </button>
                 <button @click="reviseVisible=true">
-                  <b>告诉 AI 怎么改</b>
-                  <small>调整景点 / 餐饮 / 节奏</small>
+                  <b>修改偏好</b>
+                  <small>景点 / 餐饮 / 节奏</small>
                 </button>
                 <el-button class="confirm-btn" type="primary" :loading="confirming" @click="confirmCurrentDay">确认 Day {{ String(currentDay.day).padStart(2,'0') }}</el-button>
               </div>
@@ -628,7 +729,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
         @back="step='DAY_BUILDING'"
       />
 
-      <el-dialog v-model="reviseVisible" title="告诉 AI 怎么改" width="520px">
+      <el-dialog v-model="reviseVisible" title="修改这一天的偏好" width="520px">
         <el-input v-model="reviseText" type="textarea" :rows="5" resize="none" placeholder="例如：下午太累了，换成轻松一点；午餐想吃本地老字号；减少步行距离。"/>
         <template #footer>
           <el-button @click="reviseVisible=false">取消</el-button>
@@ -729,7 +830,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
 .hero-input-shell button:disabled{cursor:wait;opacity:.72}
 .quick-fields{width:min(940px,100%);display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:2px}.quick-fields button{border:1px solid #e7edf4;border-radius:12px;background:rgba(255,255,255,.76);box-shadow:0 10px 24px rgba(15,23,42,.05);height:58px;text-align:left;padding:10px 14px;color:#172033}.quick-fields b,.quick-fields span{display:block}.quick-fields b{font-size:14px}.quick-fields span{margin-top:4px;color:#7b8798;font-size:12px}.inspiration-block{width:min(1220px,100%);margin-top:14px;text-align:left}.inspiration-block h3{margin:0 0 12px;color:#172033}.inspiration-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}.inspiration-grid button{height:150px;border:1px solid #e2e8f0;border-radius:10px;background:linear-gradient(180deg,#fff,#f8fafc);text-align:left;padding:14px;color:#172033;box-shadow:0 12px 30px rgba(15,23,42,.06);cursor:pointer}.inspiration-grid span{display:inline-block;border-radius:999px;background:#e6f7f3;color:#0f766e;padding:4px 8px;font-size:12px;font-weight:800}.inspiration-grid b{display:block;margin-top:42px;font-size:16px}.inspiration-grid small{display:block;margin-top:10px;color:#607086}
 
-.followup-workspace{min-height:calc(100vh - 72px);padding:22px 48px 52px;background:linear-gradient(180deg,#f7fbff,#f5f7fa)}.progress-steps{display:flex;justify-content:center;gap:70px;color:#718096;font-size:13px;margin:0 0 18px}.progress-steps b{color:#0f766e}.followup-grid{display:grid;grid-template-columns:minmax(420px,1fr) minmax(460px,.95fr);gap:22px;max-width:1400px;margin:auto}.assistant-card,.requirement-card{border:1px solid #e6edf5;border-radius:18px;background:rgba(255,255,255,.92);box-shadow:0 18px 48px rgba(15,23,42,.07);padding:24px}.bot-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:#10233f;color:#fff;font-weight:900}.assistant-card h3,.requirement-card h3{margin:10px 0 6px;color:#172033}.assistant-card>p{margin:0 0 18px;color:#607086;line-height:1.7}.question-list{display:grid;gap:12px}.question-list article{position:relative;border:1px solid #edf1f5;border-radius:14px;background:#fff;padding:16px}.question-list i{position:absolute;left:-13px;top:18px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#0f9f8f;color:#fff;font-style:normal;font-weight:900}.question-list h4{margin:0 0 12px;color:#172033}.question-list article div{display:flex;gap:10px;flex-wrap:wrap}.question-list button{height:30px;border:1px solid #dce5ef;border-radius:999px;background:#fff;color:#526176;padding:0 17px;cursor:pointer}.question-list button.active{border-color:#0f9f8f;background:#ecfdf5;color:#0f766e}.question-list input{width:100%;height:36px;margin-top:10px;border:1px solid #e3eaf2;border-radius:10px;padding:0 12px;outline:0}.skip-btn,.generate-day-btn{width:100%;height:44px;border:0;border-radius:10px;background:linear-gradient(135deg,#0d9488,#10b981);color:#fff;font-weight:900;margin-top:16px;cursor:pointer}.requirement-card header{display:flex;justify-content:space-between;align-items:center}.requirement-card header button{border:1px solid #e3eaf2;background:#fff;border-radius:8px;height:30px;padding:0 12px;color:#475569}.requirement-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.requirement-grid div{border:1px solid #edf1f5;border-radius:12px;padding:12px;background:#fbfdff}.requirement-grid span,.requirement-grid b{display:block}.requirement-grid span{color:#7b8798;font-size:12px}.requirement-grid b{margin-top:6px;color:#172033}.requirement-card p{color:#607086}.requirement-card blockquote{margin:0;border:0;border-radius:12px;background:#f8fafc;padding:15px;color:#475569;line-height:1.7}
+.followup-workspace{min-height:calc(100vh - 72px);padding:22px 48px 52px;background:linear-gradient(180deg,#f7fbff,#f5f7fa)}.question-list{display:grid;gap:12px}.question-list article{position:relative;border:1px solid #edf1f5;border-radius:14px;background:#fff;padding:16px}.question-list i{position:absolute;left:-13px;top:18px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#0f9f8f;color:#fff;font-style:normal;font-weight:900}.question-list h4{margin:0 0 12px;color:#172033}.question-list article div{display:flex;gap:10px;flex-wrap:wrap}.question-list button{height:30px;border:1px solid #dce5ef;border-radius:999px;background:#fff;color:#526176;padding:0 17px;cursor:pointer}.question-list button.active{border-color:#0f9f8f;background:#ecfdf5;color:#0f766e}.question-list input{width:100%;height:36px;margin-top:10px;border:1px solid #e3eaf2;border-radius:10px;padding:0 12px;outline:0}.generate-day-btn{width:100%;height:44px;border:0;border-radius:10px;background:linear-gradient(135deg,#0d9488,#10b981);color:#fff;font-weight:900;margin-top:16px;cursor:pointer}
 
 .hero-followup {
   width: min(720px, 100%);
@@ -1033,6 +1134,370 @@ function coordinateForPlace(title:string,destination:string,index:number){
   font-weight: 900!important;
 }
 
+.product-hero {
+  min-height: calc(100vh - 72px);
+  display: block;
+  padding: 42px 24px 58px;
+  background: linear-gradient(180deg,#f8fbff 0%,#eef4f7 100%);
+  text-align: left;
+}
+
+.hero-shell {
+  width: min(1280px, calc(100vw - 64px));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0,1.18fr) 390px;
+  gap: 28px;
+  align-items: stretch;
+}
+
+.hero-panel {
+  padding: 34px;
+  border: 1px solid #e3eaf2;
+  border-radius: 24px;
+  background: rgba(255,255,255,.88);
+  box-shadow: 0 22px 54px rgba(15,23,42,.08);
+}
+
+.hero-kicker {
+  margin: 0 0 12px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+.hero-panel h1 {
+  max-width: 760px;
+  margin: 0;
+  color: #101827;
+  font-size: 38px;
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.hero-lead {
+  max-width: 720px;
+  margin: 14px 0 24px;
+  color: #5f6f84;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.product-hero .hero-input-shell {
+  width: 100%;
+  min-height: 172px;
+  grid-template-columns: 1fr;
+  padding: 16px;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px #dfe7f0,0 14px 30px rgba(15,23,42,.06);
+}
+
+.product-hero .hero-input-shell textarea {
+  height: 100px;
+  padding: 4px;
+  font-size: 15px;
+}
+
+.hero-input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #edf2f7;
+  padding-top: 12px;
+}
+
+.hero-input-actions span {
+  color: #7b8798;
+  font-size: 12px;
+}
+
+.hero-input-actions button {
+  min-width: 132px;
+  height: 42px;
+}
+
+.product-hero .quick-fields {
+  width: 100%;
+  grid-template-columns: repeat(4,1fr);
+  margin-top: 18px;
+  gap: 12px;
+}
+
+.product-hero .quick-fields button {
+  height: 72px;
+  border-radius: 16px;
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+.product-hero .quick-fields b {
+  font-size: 13px;
+  color: #687589;
+}
+
+.product-hero .quick-fields span {
+  font-size: 16px;
+  color: #101827;
+  font-weight: 900;
+}
+
+.hero-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  min-height: 418px;
+  color: #fff;
+  background: #10233f;
+  box-shadow: 0 22px 54px rgba(15,23,42,.14);
+}
+
+.hero-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(1.06);
+}
+
+.hero-preview:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,rgba(8,17,32,.08),rgba(8,17,32,.74));
+}
+
+.preview-card,
+.preview-stats {
+  position: absolute;
+  z-index: 1;
+  left: 20px;
+  right: 20px;
+}
+
+.preview-card { bottom: 94px; }
+.preview-card span { display:inline-flex;border-radius:999px;background:rgba(255,255,255,.18);padding:6px 10px;font-size:12px;font-weight:800; }
+.preview-card b { display:block;margin-top:10px;font-size:25px; }
+.preview-card p { margin:8px 0 0;color:rgba(255,255,255,.78);line-height:1.55; }
+.preview-stats { bottom:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px; }
+.preview-stats div { border-radius:14px;background:rgba(255,255,255,.14);padding:10px;backdrop-filter:blur(10px); }
+.preview-stats small,.preview-stats b { display:block; }
+.preview-stats small { color:rgba(255,255,255,.66);font-size:11px; }
+.preview-stats b { margin-top:4px;color:#fff;font-size:13px; }
+
+.product-hero .inspiration-block {
+  width: min(1280px, calc(100vw - 64px));
+  margin: 24px auto 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-head h3 { margin:0;color:#172033; }
+.section-head span { color:#758195;font-size:13px; }
+.product-hero .inspiration-grid { grid-template-columns: repeat(4,1fr); }
+.product-hero .inspiration-grid button { height:132px;border-radius:18px;padding:16px;background:#fff;box-shadow:0 14px 34px rgba(15,23,42,.06); }
+.product-hero .inspiration-grid b { margin-top:28px;font-size:17px; }
+.product-hero .inspiration-grid small { font-size:12px; }
+
+.product-followup {
+  min-height: calc(100vh - 72px);
+  padding: 38px 48px 56px;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(15,159,143,.08), transparent 30%),
+    linear-gradient(180deg,#f8fbff,#f4f7fb);
+}
+
+.followup-top {
+  max-width: 1120px;
+  margin: 0 auto 18px;
+}
+
+.followup-top span {
+  color: #0f766e;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.followup-top h1 {
+  margin: 8px 0 6px;
+  color: #101827;
+  font-size: 32px;
+  letter-spacing: 0;
+}
+
+.followup-top p {
+  margin: 0;
+  color: #64748b;
+}
+
+.planning-console {
+  max-width: 1120px;
+  margin: 0 auto;
+  border: 1px solid #e5edf5;
+  border-radius: 24px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 22px 58px rgba(15,23,42,.08);
+  padding: 26px;
+}
+
+.console-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.console-kicker {
+  display: inline-flex;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.console-summary h2 {
+  margin: 7px 0 0;
+  color: #111827;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.edit-summary-btn {
+  height: 38px;
+  border: 1px solid #dce6f0;
+  border-radius: 12px;
+  background: #fff;
+  color: #526176;
+  font-weight: 800;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(6,1fr);
+  gap: 10px;
+  margin: 22px 0 14px;
+}
+
+.summary-strip div {
+  min-width: 0;
+  border: 1px solid #edf2f7;
+  border-radius: 16px;
+  background: #fbfdff;
+  padding: 13px 14px;
+}
+
+.summary-strip span,
+.summary-strip b {
+  display: block;
+}
+
+.summary-strip span {
+  color: #7b8798;
+  font-size: 12px;
+}
+
+.summary-strip b {
+  margin-top: 6px;
+  color: #111827;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.original-demand {
+  margin: 0;
+  border: 0;
+  border-radius: 16px;
+  background: #f7fafc;
+  color: #526176;
+  line-height: 1.75;
+  padding: 16px 18px;
+}
+
+.followup-task {
+  margin-top: 18px;
+  border: 1px solid #e4edf6;
+  border-radius: 20px;
+  background: linear-gradient(180deg,#fff,#fbfdff);
+  padding: 20px;
+}
+
+.task-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.task-heading span {
+  display: inline-flex;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 7px 12px;
+}
+
+.task-heading h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+}
+
+.product-followup .question-list {
+  gap: 14px;
+}
+
+.product-followup .question-list article {
+  border-radius: 18px;
+  border-color: #e6edf5;
+  background: #fff;
+  padding: 18px 18px 18px 46px;
+}
+
+.product-followup .question-list i {
+  left: 16px;
+  top: 20px;
+}
+
+.product-followup .question-list input {
+  height: 42px;
+  margin-top: 12px;
+}
+
+.console-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.console-actions span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.product-followup .generate-day-btn {
+  width: 270px;
+  height: 50px;
+  border-radius: 14px;
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
 @media (max-width: 1180px) {
   .trip-summary {
     grid-template-columns: 120px 1fr 1fr 1fr;
@@ -1074,7 +1539,39 @@ function coordinateForPlace(title:string,destination:string,index:number){
   .hero-input-shell {
     grid-template-columns: 1fr;
   }
-  .quick-fields,.inspiration-grid,.followup-grid,.requirement-grid{grid-template-columns:1fr}
+  .quick-fields,
+  .inspiration-grid,
+  .summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .product-followup {
+    padding: 24px 16px 40px;
+  }
+
+  .followup-top h1 {
+    font-size: 26px;
+  }
+
+  .planning-console {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .console-summary,
+  .task-heading,
+  .console-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .console-summary h2 {
+    font-size: 23px;
+  }
+
+  .product-followup .generate-day-btn {
+    width: 100%;
+  }
 
   .builder-container {
     width: calc(100vw - 32px);

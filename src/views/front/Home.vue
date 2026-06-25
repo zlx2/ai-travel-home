@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Calendar, Check, Collection, MagicStick, MapLocation, Picture, User } from '@element-plus/icons-vue'
+import { Calendar, Collection, MagicStick, MapLocation } from '@element-plus/icons-vue'
 import { homeApi } from '../../api'
 import type { Destination, Note } from '../../types'
 
@@ -35,12 +35,6 @@ const useRoute = (item: any) => router.push({
   query: { destination: item.destination, days: item.days, preferences: item.preferences.join(',') },
 })
 
-const features = [
-  { icon: Check, title: 'AI 智能生成行程', text: '一句话输入需求，快速生成结构化专属路线', color: '#31c9cf' },
-  { icon: MagicStick, title: '个性化旅行建议', text: '结合偏好与预算，推荐景点、美食与节奏', color: '#8c62ef' },
-  { icon: User, title: '真实游记社区', text: '发现旅行者的真实攻略，分享旅途故事', color: '#ffad45' },
-  { icon: Picture, title: '行程保存与管理', text: '保存、查看和管理行程，出发更从容', color: '#52d191' },
-]
 </script>
 
 <template>
@@ -75,10 +69,6 @@ const features = [
     </section>
 
     <div class="home-body">
-      <section class="container feature-row">
-        <article v-for="item in features" :key="item.title"><span :style="{ background: item.color }"><el-icon><component :is="item.icon" /></el-icon></span><div><h3>{{ item.title }}</h3><p>{{ item.text }}</p></div></article>
-      </section>
-
       <section class="container compact-dashboard">
         <article class="dash-panel destination-panel"><div class="panel-head"><h3>热门目的地</h3><a>查看更多 ›</a></div><div class="mini-destinations"><button v-for="item in destinations" :key="item.id"><img :src="item.coverUrl"><span>{{ item.name }}</span></button></div></article>
         <div class="dash-middle">
@@ -160,11 +150,6 @@ const features = [
 .hero-dots i { width: 8px; height: 8px; border-radius: 50%; background: #8d98a8; }
 .hero-dots i.active { background: #4d8eea; }
 .home-body { padding: clamp(14px, 1.6vh, 20px) 0 clamp(18px, 2vh, 26px); }
-.feature-row { display: grid; grid-template-columns: repeat(4,1fr); gap: clamp(14px, 1.4vw, 24px); }
-.feature-row article { min-height: 86px; background: #fff; border: 1px solid #e9eef3; border-radius: 10px; display: flex; align-items: center; padding: 15px 19px; gap: 15px; box-shadow: 0 5px 18px #5c77900c; }
-.feature-row article>span { flex: 0 0 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 24px; box-shadow: 0 6px 13px #5b718e33; }
-.feature-row h3 { font-size: 15px; margin: 0 0 5px; }
-.feature-row p { font-size: 13px; line-height: 1.45; color: #758091; margin: 0; }
 .compact-dashboard { width: min(1840px, calc(100vw - 48px)) !important; margin-top: clamp(12px, 1.4vh, 16px); display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.2fr) minmax(0, 1.4fr); gap: clamp(10px, .8vw, 16px); align-items: stretch; }
 .compact-dashboard>* { min-height: 0; }
 .dash-panel { min-height: 0; background: #fff; border: 1px solid #e9eef3; border-radius: 13px; padding: 14px 16px; overflow: hidden; box-shadow: 0 8px 24px rgba(53,78,110,.045); }
@@ -199,7 +184,6 @@ const features = [
   .compact-home { --page-width: min(1320px, calc(100vw - 48px)); }
   .hero-grid { grid-template-columns: minmax(400px,.85fr) minmax(600px,1.2fr); gap: 34px; }
   .hero-copy h1 { font-size: clamp(43px, 3.35vw, 52px); }
-  .feature-row p { font-size: 12px; }
 }
 @media (max-height: 850px) {
   .reference-hero { height: 410px; }

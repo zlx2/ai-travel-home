@@ -12,7 +12,7 @@ const logout=async()=>{await store.logout();router.push('/')}
       <div class="container nav-inner">
         <router-link class="logo" to="/"><span class="logo-symbol">✈</span><span>PlanGo</span></router-link>
         <nav class="main-nav">
-          <router-link to="/">首页</router-link><router-link to="/ai-trip">AI 行程规划</router-link><router-link to="/trips">我的行程</router-link><router-link to="/car-rental">租车出行</router-link><router-link to="/notes">游记社区</router-link><router-link to="/map-playground">地图测试</router-link>
+          <router-link to="/">首页</router-link><router-link to="/ai-trip">AI 行程规划</router-link><router-link to="/trips">我的行程</router-link><router-link to="/car-rental">租车出行</router-link><router-link to="/notes">游记社区</router-link>
         </nav>
         <div class="nav-actions" v-if="!store.isLogin"><el-button text @click="go('/login')">登录</el-button><el-button type="primary" round @click="go('/register')">免费注册</el-button></div>
         <el-dropdown v-else trigger="click">

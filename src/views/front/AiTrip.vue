@@ -17,6 +17,10 @@ const userInput=ref('带父母去杭州玩3天，不要太累，喜欢自然风�
 const showForm=ref(false)
 const analyzing=ref(false)
 const generating=ref(false)
+const generateElapsed=ref(0)
+const generateProgress=ref(1)
+const generateProgressLabel=ref('准备生成行程')
+let generateTimer:number|undefined
 const saving=ref(false)
 const confirming=ref(false)
 const orderCreated=ref(false)
@@ -209,9 +213,13 @@ const continueFromSummary=()=>{
 const startDayBuilding=async()=>{
   if(!result.value?.requirement)return
   generating.value=true
+  startGenerateTimer()
   step.value='DAY_BUILDING'
   try{
-    const data=await aiApi.generate(result.value.conversationId,result.value.requirement)
+    const data=await aiApi.generateStream(result.value.conversationId,result.value.requirement,event=>{
+      if(event.label)generateProgressLabel.value=event.label
+      if(typeof event.progress==='number')generateProgress.value=event.progress
+    })
     assertTripPlanComplete(data.tripPlan,result.value.requirement.days)
     plan.value=data.tripPlan
     recommendation.value=data.recommendationContext||null
@@ -221,12 +229,30 @@ const startDayBuilding=async()=>{
     recommendation.value=null
     days.value=[]
     step.value='INPUT'
-    ElMessage.error(error instanceof Error?error.message:'后端暂时没有返回可用行程，请检查 /ai/trips/generate 接口')
+    ElMessage.error(error instanceof Error?error.message:'行程生成失败，请稍后重试')
   }finally{
+    stopGenerateTimer()
     currentDayIndex.value=days.value.findIndex(day=>day.status==='active')
     if(currentDayIndex.value<0)currentDayIndex.value=0
     setTimeout(()=>document.querySelector('.day-builder')?.scrollIntoView({behavior:'smooth',block:'start'}),100)
     generating.value=false
+  }
+}
+
+function startGenerateTimer(){
+  stopGenerateTimer()
+  generateElapsed.value=0
+  generateProgress.value=1
+  generateProgressLabel.value='开始生成行程'
+  generateTimer=window.setInterval(()=>{
+    generateElapsed.value+=1
+  },1000)
+}
+
+function stopGenerateTimer(){
+  if(generateTimer){
+    window.clearInterval(generateTimer)
+    generateTimer=undefined
   }
 }
 
@@ -320,7 +346,7 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
     const activities=day.activities.length?day.activities:[]
     const route=activities.map(item=>item.title.split('→')[0].trim()).filter(Boolean).slice(0,5)
     const tickets=day.estimatedCost?.tickets??Math.max(0,activities.reduce((sum,item)=>sum+(item.cost||0),0)*requirement.peopleCount)
-    const foodCost=day.estimatedCost?.food??Math.max(120,requirement.peopleCount*75)
+    const foodCost=normalizeDailyFoodCost(day.estimatedCost?.food,requirement.peopleCount)
     const traffic=day.estimatedCost?.transport??requirement.peopleCount*40
     const other=0
     const dayFood=Array.isArray(day.food)?day.food:[day.food].filter(Boolean)
@@ -342,7 +368,7 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
         food:foodCost,
         traffic,
         other,
-        total:day.estimatedCost?.total??tickets+foodCost+traffic,
+        total:tickets+foodCost+traffic,
         foodSource:day.estimatedCost?.foodSource,
         transportSource:day.estimatedCost?.transportSource,
         excludesUnknownItems:day.estimatedCost?.excludesUnknownItems,
@@ -389,7 +415,7 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     period,
     time:activity?.time||time,
     title:activity?.title||'城市精选体验',
-    description:activity?.description||'保留目的地代表性体验，同时控制步行和换乘压力。',
+    description:visitSummary(activity),
     tags:(activity?.tags?.length?activity.tags:tags).map(prettyTag).filter(Boolean),
     cost:Number(activity?.cost||0),
     costText:activity?.costText,
@@ -397,7 +423,7 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     suggestedDuration:activity?.suggestedDuration,
     suggestedDurationSource:activity?.suggestedDurationSource,
     transportSuggestion:activity?.transportSuggestion,
-    reason:activity?.reason,
+    reason:guideReason(activity),
     area:activity?.area,
     address:activity?.address,
     lng:activity?.lng,
@@ -408,6 +434,30 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     businessArea:activity?.businessArea,
     imageUrls:activity?.imageUrls,
   }
+}
+
+function normalizeDailyFoodCost(value:number|undefined,peopleCount:number){
+  const people=Math.max(1,peopleCount||1)
+  const fallback=people*70
+  const amount=Number(value||fallback)
+  return Math.min(Math.max(amount,people*45),people*110)
+}
+
+function visitSummary(activity:any){
+  const title=activity?.title||activity?.name||'这里'
+  const tags=(activity?.tags||[]).join(' ')
+  const type=String(activity?.type||tags)
+  const duration=activity?.suggestedDuration||activity?.suggestedDurationText
+  const stay=duration?`建议留${duration.replace(/^约/,'约')}，`:'建议放慢一点逛，'
+  if(/博物|历史|文化/.test(`${title} ${type}`))return `${title}适合先看展陈和城市故事，${stay}重点看代表性展品和脉络，不用赶场。`
+  if(/湖|山|公园|湿地|自然|景观|风景/.test(`${title} ${type}`))return `${title}适合看风景和拍照，${stay}把时间留给湖岸、步道或观景点。`
+  if(/街|巷|坊|古镇|步行/.test(`${title} ${type}`))return `${title}适合边走边看本地生活，${stay}顺路找小吃和街角店铺。`
+  if(/夜|市场|美食/.test(`${title} ${type}`))return `${title}适合放在傍晚后体验，${stay}把晚餐和夜景一起安排。`
+  return `${title}是当天的重点停留，${stay}优先看最有辨识度的部分，再按体力决定是否加逛周边。`
+}
+
+function guideReason(activity:any){
+  return String(activity?.reason||activity?.recommendReason||activity?.description||'').trim()
 }
 
 function polishDayTitle(title:string|undefined,day:number,destination:string,activities:any[]=[]){
@@ -663,7 +713,9 @@ function coordinateForPlace(title:string,destination:string,index:number){
       <section v-if="generating" class="builder-loading builder-card">
         <span><el-icon><Loading class="is-loading"/></el-icon></span>
         <h2>正在逐日生成行程</h2>
-        <p>PlanGo 正在整理路线、餐饮、交通、预算和出行贴士。</p>
+        <p>{{ generateProgressLabel }}</p>
+        <div class="generate-progress"><i :style="{width:`${generateProgress}%`}"></i></div>
+        <small>{{ generateProgress }}% · 已用时 {{ generateElapsed }} 秒</small>
       </section>
 
       <section v-if="step==='DAY_BUILDING'&&!generating&&currentDay" class="day-builder">
@@ -926,6 +978,30 @@ function coordinateForPlace(title:string,destination:string,index:number){
 .builder-loading p {
   margin: 8px 0 0;
   color: #64748b;
+}
+
+.builder-loading small {
+  display: block;
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.generate-progress {
+  width: min(360px, 80%);
+  height: 8px;
+  margin: 18px auto 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef6;
+}
+
+.generate-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  transition: width .28s ease;
 }
 
 .day-builder {

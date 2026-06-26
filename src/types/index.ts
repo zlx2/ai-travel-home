@@ -15,6 +15,7 @@ export interface HotelArea { area:string; reason:string; priceRange:string }
 export interface TransportPlan { travelMode:TravelMode; pickupStore?:RentalStore|null; returnStore?:RentalStore|null; tips:string[] }
 export interface RecommendationContext { scenicSpots:ScenicSpot[]; foodSpots:FoodSpot[]; hotelAreas:HotelArea[]; transportPlan:TransportPlan }
 export interface GenerateResult { conversationId:string; requirement:Requirement; recommendationContext?:RecommendationContext; tripPlan:TripPlan }
+export interface GenerateProgressEvent { type:'start'|'progress'|'done'|'error'; node?:string; label?:string; progress?:number; data?:GenerateResult; message?:string }
 export interface Trip { id:number; userId?:number; username?:string; title:string; destination:string; days:number; budget:number; preferences:string[]; summary:string; coverUrl?:string; requirementJson?:Requirement; tripPlanJson:TripPlan; status:number; createTime:string; updateTime?:string }
 export interface Note { id:number; authorId:number; authorNickname:string; authorAvatarUrl?:string; title:string; coverUrl:string; destination:string; summary:string; content:string; tags:string[]; tagIds:number[]; viewCount?:number; likeCount:number; favoriteCount:number; commentCount:number; liked?:boolean; favorited?:boolean; status:number; createTime:string; updateTime?:string }
 export interface Comment { id:number; noteId:number; noteTitle?:string; userId:number; nickname:string; avatarUrl?:string; content:string; createTime:string }

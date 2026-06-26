@@ -1,7 +1,9 @@
 import requestClient from '../utils/request'
 import { USE_MOCK, comments, delay, destinations, notes, persist, tags, trips, users, buildPlan } from '../data/mock'
-import type { AnalyzeResult, Comment, GenerateResult, Note, PageResult, RecommendationContext, Requirement, Trip, TripPlan, UserInfo } from '../types'
+import { TOKEN_KEY } from '../utils/auth'
+import type { AnalyzeResult, Comment, GenerateProgressEvent, GenerateResult, Note, PageResult, RecommendationContext, Requirement, Trip, TripPlan, UserInfo } from '../types'
 const request:any=requestClient
+const AI_GENERATE_TIMEOUT_MS=240000
 
 const page=<T>(list:T[],pageNum=1,pageSize=10):PageResult<T>=>({list:list.slice((pageNum-1)*pageSize,pageNum*pageSize),total:list.length,pageNum,pageSize})
 const mockHome=()=>({hotDestinations:destinations.slice(0,6),hotNotes:notes.filter(n=>n.status===1).slice(0,3),hotTags:tags,recommendedTrips:[{destination:'重庆',days:3,preferences:['美食','夜景']},{destination:'成都',days:4,preferences:['美食','轻松游']},{destination:'西安',days:3,preferences:['历史文化','拍照打卡']},{destination:'厦门',days:3,preferences:['海岛','轻松游']}]})
@@ -18,7 +20,50 @@ export const authApi={
 export const homeApi={async getHome(){if(!USE_MOCK){try{return await request.get('/home',{suppressError:true})}catch{return mockHome()}}await delay();return mockHome()}}
 export const aiApi={
   async analyze(payload:{conversationId?:string|null;userInput:string;extraAnswers?:string[];requirement?:Partial<Requirement>}):Promise<AnalyzeResult>{if(!USE_MOCK)return request.post('/ai/trips/analyze',payload);await delay(850);const text=[payload.userInput,...(payload.extraAnswers||[])].join(' ');const dest=payload.requirement?.destination||destinations.find(d=>text.includes(d.name))?.name||'';const departure=payload.requirement?.departure||text.match(/从([^去出发，, ]+)/)?.[1]||'';const days=Number(text.match(/(\d+)\s*天/)?.[1]||payload.requirement?.days||0);const questions=[];if(!departure)questions.push({field:'departure',question:'你准备从哪个城市出发？',required:true});if(!dest)questions.push({field:'destination',question:'你这次想去哪个目标城市？',required:true});if(!days)questions.push({field:'days',question:'这次旅行大概安排几天？',required:true});if(questions.length)return{conversationId:payload.conversationId||crypto.randomUUID(),status:'NEED_MORE_INFO',requirement:{...payload.requirement,departure,destination:dest,days} as Requirement,questions};const budget=Number(text.match(/预算\s*(\d+)/)?.[1]||payload.requirement?.budget||2000);const preferences=payload.requirement?.preferences?.length?payload.requirement.preferences:['美食','夜景'];return{conversationId:payload.conversationId||crypto.randomUUID(),status:'READY',requirement:{departure,destination:dest,days,budget,budgetType:'TOTAL',peopleCount:payload.requirement?.peopleCount||2,preferences,pace:payload.requirement?.pace||'LIGHT',avoidances:payload.requirement?.avoidances||['不早起'],travelDate:payload.requirement?.travelDate}}},
-  async generate(conversationId:string,requirement:Requirement):Promise<GenerateResult>{if(!USE_MOCK){const data=await request.post('/ai/trips/generate',{conversationId,requirement});return normalizeGenerateResult(data)}await delay(1500);return{conversationId,requirement,recommendationContext:mockRecommendation(requirement),tripPlan:buildPlan(requirement)}},
+  async generate(conversationId:string,requirement:Requirement):Promise<GenerateResult>{if(!USE_MOCK){const data=await request.post('/ai/trips/generate',{conversationId,requirement},{timeout:AI_GENERATE_TIMEOUT_MS,suppressError:true});return normalizeGenerateResult(data)}await delay(1500);return{conversationId,requirement,recommendationContext:mockRecommendation(requirement),tripPlan:buildPlan(requirement)}},
+  async generateStream(conversationId:string,requirement:Requirement,onProgress:(event:GenerateProgressEvent)=>void):Promise<GenerateResult>{
+    if(USE_MOCK){
+      for(const label of ['正在规划每日主题','正在查询景点与路线数据','正在生成每日行程和推荐理由','正在合并最终行程']){
+        onProgress({type:'progress',label})
+        await delay(450)
+      }
+      const result={conversationId,requirement,recommendationContext:mockRecommendation(requirement),tripPlan:buildPlan(requirement)}
+      onProgress({type:'done',data:result})
+      return result
+    }
+    const token=localStorage.getItem(TOKEN_KEY)
+    const response=await fetch(`${import.meta.env.VITE_API_BASE_URL||'/api'}/ai/trips/generate/stream`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},
+      body:JSON.stringify({conversationId,requirement}),
+    })
+    if(!response.ok||!response.body)throw new Error('无法连接行程生成进度流，请稍后重试')
+    const reader=response.body.getReader()
+    const decoder=new TextDecoder()
+    let buffer=''
+    let result:GenerateResult|undefined
+    while(true){
+      const {value,done}=await reader.read()
+      if(done)break
+      buffer+=decoder.decode(value,{stream:true})
+      const chunks=buffer.split(/\r?\n\r?\n/)
+      buffer=chunks.pop()||''
+      for(const chunk of chunks){
+        const dataText=chunk.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trim()).join('\n')
+        if(!dataText)continue
+        const event=JSON.parse(dataText) as GenerateProgressEvent
+        if(event.type==='done'&&event.data){
+          result=normalizeGenerateResult(event.data)
+          onProgress({...event,data:result})
+        }else{
+          onProgress(event)
+          if(event.type==='error')throw new Error(event.message||'行程生成失败，请稍后重试')
+        }
+      }
+    }
+    if(!result)throw new Error('行程生成结束但没有返回结果，请稍后重试')
+    return result
+  },
   async chat(message:string,tripId:number){if(!USE_MOCK)return request.post('/ai/chat',{mode:'TRIP',tripId,message});await delay(650);return{conversationId:`trip-${tripId}`,reply:`结合当前行程，我建议：${message.includes('累')?'把第二天下午的两个景点合并，午后增加 1 小时休息，并优先选择轨道交通。':'保留核心体验，同时每天只安排 2—3 个重点地点，给交通和临时发现留出余量。'}`,suggestions:['帮我改得轻松一点','预算还能再低一点吗？','适合带父母去吗？']}},
 }
 function normalizeGenerateResult(data:any):GenerateResult{

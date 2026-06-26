@@ -16,7 +16,7 @@ export interface TransportPlan { travelMode:TravelMode; pickupStore?:RentalStore
 export interface RecommendationContext { scenicSpots:ScenicSpot[]; foodSpots:FoodSpot[]; hotelAreas:HotelArea[]; transportPlan:TransportPlan }
 export interface GenerateResult { conversationId:string; requirement:Requirement; recommendationContext?:RecommendationContext; tripPlan:TripPlan }
 export interface Trip { id:number; userId?:number; username?:string; title:string; destination:string; days:number; budget:number; preferences:string[]; summary:string; coverUrl?:string; requirementJson?:Requirement; tripPlanJson:TripPlan; status:number; createTime:string; updateTime?:string }
-export interface Note { id:number; authorId:number; authorNickname:string; authorAvatarUrl?:string; title:string; coverUrl:string; destination:string; summary:string; content:string; tags:string[]; tagIds:number[]; likeCount:number; favoriteCount:number; commentCount:number; liked?:boolean; favorited?:boolean; status:number; createTime:string; updateTime?:string }
+export interface Note { id:number; authorId:number; authorNickname:string; authorAvatarUrl?:string; title:string; coverUrl:string; destination:string; summary:string; content:string; tags:string[]; tagIds:number[]; viewCount?:number; likeCount:number; favoriteCount:number; commentCount:number; liked?:boolean; favorited?:boolean; status:number; createTime:string; updateTime?:string }
 export interface Comment { id:number; noteId:number; noteTitle?:string; userId:number; nickname:string; avatarUrl?:string; content:string; createTime:string }
 export type AnalyzeStatus='READY'|'NEED_MORE_INFO'|'CONFLICT'|'NEED_DESTINATION_CHOICE'
 export interface AnalyzeQuestion { field:string; question:string; required:boolean }

@@ -79,7 +79,11 @@ const cleanOpeningHours=(value?:string)=>{
       <span>{{ routeHealth.text }}</span>
     </section>
 
-    <section class="timeline-scroll">
+    <section v-if="day.status==='pending'||day.status==='generating'" class="day-empty-state">
+      <b>{{ day.status==='generating' ? '正在生成这一天' : '等待生成' }}</b>
+      <span>{{ day.subtitle }}</span>
+    </section>
+    <section v-else class="timeline-scroll">
       <div class="timeline-panel">
         <div v-for="(moment,index) in day.moments" :key="moment.key" class="moment-row" :class="{ expanded: expandedKey===moment.key }">
           <div class="moment-time">

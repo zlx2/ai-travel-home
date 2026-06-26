@@ -1,7 +1,7 @@
 import requestClient from '../utils/request'
 import { USE_MOCK, comments, delay, destinations, notes, persist, tags, trips, users, buildPlan } from '../data/mock'
 import { TOKEN_KEY } from '../utils/auth'
-import type { AnalyzeResult, Comment, GenerateProgressEvent, GenerateResult, Note, PageResult, RecommendationContext, Requirement, Trip, TripPlan, UserInfo } from '../types'
+import type { AnalyzeResult, Comment, GenerateProgressEvent, GenerateResult, Note, PageResult, RecommendationContext, Requirement, Trip, TripDay, TripPlan, UserInfo } from '../types'
 import { homeImage } from '../utils/homeImages'
 const request:any=requestClient
 const AI_GENERATE_TIMEOUT_MS=240000
@@ -22,6 +22,7 @@ export const homeApi={async getHome(){if(!USE_MOCK){try{return await request.get
 export const aiApi={
   async analyze(payload:{conversationId?:string|null;userInput:string;extraAnswers?:string[];requirement?:Partial<Requirement>}):Promise<AnalyzeResult>{if(!USE_MOCK)return request.post('/ai/trips/analyze',payload);await delay(850);const text=[payload.userInput,...(payload.extraAnswers||[])].join(' ');const dest=payload.requirement?.destination||destinations.find(d=>text.includes(d.name))?.name||'';const departure=payload.requirement?.departure||text.match(/从([^去出发，, ]+)/)?.[1]||'';const days=Number(text.match(/(\d+)\s*天/)?.[1]||payload.requirement?.days||0);const questions=[];if(!departure)questions.push({field:'departure',question:'你准备从哪个城市出发？',required:true});if(!dest)questions.push({field:'destination',question:'你这次想去哪个目标城市？',required:true});if(!days)questions.push({field:'days',question:'这次旅行大概安排几天？',required:true});if(questions.length)return{conversationId:payload.conversationId||crypto.randomUUID(),status:'NEED_MORE_INFO',requirement:{...payload.requirement,departure,destination:dest,days} as Requirement,questions};const budget=Number(text.match(/预算\s*(\d+)/)?.[1]||payload.requirement?.budget||2000);const preferences=payload.requirement?.preferences?.length?payload.requirement.preferences:['美食','夜景'];return{conversationId:payload.conversationId||crypto.randomUUID(),status:'READY',requirement:{departure,destination:dest,days,budget,budgetType:'TOTAL',peopleCount:payload.requirement?.peopleCount||2,preferences,pace:payload.requirement?.pace||'LIGHT',avoidances:payload.requirement?.avoidances||['不早起'],travelDate:payload.requirement?.travelDate}}},
   async generate(conversationId:string,requirement:Requirement):Promise<GenerateResult>{if(!USE_MOCK){const data=await request.post('/ai/trips/generate',{conversationId,requirement},{timeout:AI_GENERATE_TIMEOUT_MS,suppressError:true});return normalizeGenerateResult(data)}await delay(1500);return{conversationId,requirement,recommendationContext:mockRecommendation(requirement),tripPlan:buildPlan(requirement)}},
+  async generateDay(sessionId:string,dayNo:number,options?:{requestMode?:'USER'|'PREFETCH';forceRegenerate?:boolean;prefetchNext?:boolean}):Promise<TripDay>{if(!USE_MOCK){const data=await request.post(`/ai/trips/generate/session/${sessionId}/days/${dayNo}`,null,{params:{requestMode:options?.requestMode||'USER',forceRegenerate:options?.forceRegenerate??false,prefetchNext:options?.prefetchNext??true},timeout:AI_GENERATE_TIMEOUT_MS,suppressError:true});if(data.status==='FAILED')throw new Error(data.errorMessage||`第 ${dayNo} 天生成失败`);if(!data.resultJson)throw new Error(`第 ${dayNo} 天生成完成但没有返回结果`);const dayJson=typeof data.resultJson==='string'?JSON.parse(data.resultJson):data.resultJson;const normalized=normalizeTripDay(dayJson,dayNo-1);return{...normalized,day:dayNo}}await delay(900);return buildPlan({departure:'',destination:'杭州',days:dayNo,budget:0,budgetType:'TOTAL',peopleCount:2,preferences:[],pace:'LIGHT',avoidances:[]}).dailyPlans[dayNo-1]},
   async generateStream(conversationId:string,requirement:Requirement,onProgress:(event:GenerateProgressEvent)=>void):Promise<GenerateResult>{
     if(USE_MOCK){
       for(const label of ['正在规划每日主题','正在查询景点与路线数据','正在生成每日行程和推荐理由','正在合并最终行程']){
@@ -68,7 +69,7 @@ export const aiApi={
   async chat(message:string,tripId:number){if(!USE_MOCK)return request.post('/ai/chat',{mode:'TRIP',tripId,message});await delay(650);return{conversationId:`trip-${tripId}`,reply:`结合当前行程，我建议：${message.includes('累')?'把第二天下午的两个景点合并，午后增加 1 小时休息，并优先选择轨道交通。':'保留核心体验，同时每天只安排 2—3 个重点地点，给交通和临时发现留出余量。'}`,suggestions:['帮我改得轻松一点','预算还能再低一点吗？','适合带父母去吗？']}},
 }
 function normalizeGenerateResult(data:any):GenerateResult{
-  return{conversationId:data.conversationId,requirement:data.requirement,recommendationContext:data.recommendationContext,tripPlan:normalizeTripPlan(data.tripPlan)}
+  return{schemaVersion:data.schemaVersion,conversationId:data.conversationId,generationSessionId:data.generationSessionId||data.sessionId,requirement:data.requirement,recommendationContext:data.recommendationContext,tripPlan:normalizeTripPlan(data.tripPlan),dayStatuses:data.dayStatuses||[]}
 }
 function normalizeTripPlan(plan:any):TripPlan{
   const dailyPlans=plan.dailyPlans||plan.daysPlan||plan.itineraryDays||plan.dayPlans||[]

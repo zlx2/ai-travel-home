@@ -7,6 +7,7 @@ export interface Activity { time:string; title:string; description:string; tags:
 export interface DayEstimatedCost { tickets:number; food:number; transport:number; total:number; ticketSource?:string; foodSource?:string; transportSource?:string; excludesUnknownItems?:boolean }
 export interface TripDay { day:number; title:string; activities:Activity[]; food:string[]; budget:number; estimatedCost?:DayEstimatedCost; intensity?:string; accommodation?:string; diningArea?:string; routeSummary?:string; tips?:string[] }
 export interface TripPlan { title:string; destination:string; days:number; summary:string; dailyPlans:TripDay[]; accommodation:string; budgetSummary:{transport:number;hotel:number|null;food:number;tickets:number;total:number;excludesUnknownItems?:boolean}; tips:string[] }
+export interface TripGenerateDayStatus { dayNo:number; generationVersion?:number|null; isCurrent?:number; status:string; errorMessage?:string|null }
 export interface RentalStore { storeCode:string; displayName:string; address:string; lng?:string; lat?:string; distanceMeters?:number; amapPoiName?:string }
 export interface TravelMode { mode:string; recommended:boolean; reason:string; tips:string[] }
 export interface ScenicSpot { name:string; area:string; reason:string; suggestedDuration:string; suitableForSelfDrive:boolean }
@@ -14,7 +15,8 @@ export interface FoodSpot { name:string; area:string; specialty:string; reason:s
 export interface HotelArea { area:string; reason:string; priceRange:string }
 export interface TransportPlan { travelMode:TravelMode; pickupStore?:RentalStore|null; returnStore?:RentalStore|null; tips:string[] }
 export interface RecommendationContext { scenicSpots:ScenicSpot[]; foodSpots:FoodSpot[]; hotelAreas:HotelArea[]; transportPlan:TransportPlan }
-export interface GenerateResult { conversationId:string; requirement:Requirement; recommendationContext?:RecommendationContext; tripPlan:TripPlan }
+export interface GenerateResult { schemaVersion?:string; conversationId:string; generationSessionId?:string; requirement:Requirement; recommendationContext?:RecommendationContext; tripPlan:TripPlan; dayStatuses?:TripGenerateDayStatus[] }
+export interface GenerateDayResult { sessionId:string; dayNo:number; generationVersion:number; isCurrent:number; status:string; resultJson?:string|TripDay; errorMessage?:string }
 export interface GenerateProgressEvent { type:'start'|'progress'|'done'|'error'; node?:string; label?:string; progress?:number; data?:GenerateResult; message?:string }
 export interface Trip { id:number; userId?:number; username?:string; title:string; destination:string; days:number; budget:number; preferences:string[]; summary:string; coverUrl?:string; requirementJson?:Requirement; tripPlanJson:TripPlan; status:number; createTime:string; updateTime?:string }
 export interface Note { id:number; authorId:number; authorNickname:string; authorAvatarUrl?:string; title:string; coverUrl:string; destination:string; summary:string; content:string; tags:string[]; tagIds:number[]; viewCount?:number; likeCount:number; favoriteCount:number; commentCount:number; liked?:boolean; favorited?:boolean; status:number; createTime:string; updateTime?:string }

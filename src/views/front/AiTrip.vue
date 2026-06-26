@@ -30,6 +30,7 @@ const result=ref<AnalyzeResult|null>(null)
 const followUpAnswers=reactive<Record<string,string>>({})
 const plan=ref<TripPlan|null>(null)
 const recommendation=ref<RecommendationContext|null>(null)
+const generationSessionId=ref('')
 const step=ref<BuilderStep>('INPUT')
 const days=ref<BuilderDay[]>([])
 const currentDayIndex=ref(0)
@@ -221,10 +222,12 @@ const startDayBuilding=async()=>{
       if(event.label)generateProgressLabel.value=event.label
       if(typeof event.progress==='number')generateProgress.value=event.progress
     })
-    assertTripPlanComplete(data.tripPlan,result.value.requirement.days)
+    assertFirstDayGenerated(data.tripPlan)
+    generationSessionId.value=data.generationSessionId||''
     plan.value=data.tripPlan
     recommendation.value=data.recommendationContext||null
-    days.value=createBuilderDays(data.tripPlan,result.value.requirement,hasRental.value&&!!selectedQuote.value)
+    const firstDays=createBuilderDays(data.tripPlan,result.value.requirement,hasRental.value&&!!selectedQuote.value)
+    days.value=buildInitialBuilderDays(firstDays,result.value.requirement,hasRental.value&&!!selectedQuote.value)
   }catch(error){
     plan.value=null
     recommendation.value=null
@@ -257,40 +260,59 @@ function stopGenerateTimer(){
   }
 }
 
-function assertTripPlanComplete(tripPlan:TripPlan,expectedDays:number){
-  if(tripPlan.dailyPlans.length!==expectedDays){
-    throw new Error(`行程天数不足：需要 ${expectedDays} 天，实际返回 ${tripPlan.dailyPlans.length} 天`)
+function assertFirstDayGenerated(tripPlan:TripPlan){
+  if(!tripPlan?.dailyPlans?.length){
+    throw new Error('行程生成结束但没有返回第 1 天')
   }
-  const incompleteDay=tripPlan.dailyPlans.find(day=>day.activities.length<1)
-  if(incompleteDay){
-    throw new Error(`第 ${incompleteDay.day} 天景点不足：至少需要 1 个`)
+  const first=tripPlan.dailyPlans[0]
+  if(!first.activities?.length){
+    throw new Error('第 1 天景点不足：至少需要 1 个')
   }
 }
 
-const confirmCurrentDay=()=>{
+const confirmCurrentDay=async()=>{
   if(!currentDay.value)return
   confirming.value=true
-  setTimeout(()=>{
+  try{
+    if(!currentDay.value.moments.length){
+      await ensureDayGenerated(currentDayIndex.value)
+    }
     days.value[currentDayIndex.value]={...currentDay.value,status:'locked'}
     const next=currentDayIndex.value+1
     if(next<days.value.length){
-      days.value[next]={...days.value[next],status:'active'}
       currentDayIndex.value=next
+      await ensureDayGenerated(next)
     }else{
       step.value='FINAL_REVIEW'
     }
+  }catch(error){
+    ElMessage.error(error instanceof Error?error.message:'单日行程生成失败，请稍后重试')
+  }finally{
     confirming.value=false
-  },420)
+  }
 }
 
-const regenerateCurrentDay=()=>{
+const selectDay=async(index:number)=>{
+  if(index<0||index>=days.value.length||index===currentDayIndex.value)return
+  currentDayIndex.value=index
+  try{
+    await ensureDayGenerated(index)
+  }catch(error){
+    ElMessage.error(error instanceof Error?error.message:'单日行程生成失败，请稍后重试')
+  }
+}
+
+const regenerateCurrentDay=async()=>{
   if(!currentDay.value)return
   const index=currentDayIndex.value
   days.value[index]={...days.value[index],status:'generating'}
-  setTimeout(()=>{
-    days.value[index]={...days.value[index],status:'active',subtitle:'已根据新的思路重新平衡节奏、交通和停留时间。'}
+  try{
+    await ensureDayGenerated(index,true)
     ElMessage.success(`Day ${String(days.value[index].day).padStart(2,'0')} 已重新生成`)
-  },650)
+  }catch(error){
+    days.value[index]={...days.value[index],status:'active'}
+    ElMessage.error(error instanceof Error?error.message:'重新生成失败，请稍后重试')
+  }
 }
 
 const submitRevision=()=>{
@@ -343,7 +365,9 @@ function coverForDestination(destination:string){
 
 function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean):BuilderDay[]{
   const image=coverForDestination(requirement.destination)
-  return tripPlan.dailyPlans.map((day,index)=>{
+  const byDay=new Map(tripPlan.dailyPlans.map(day=>[day.day,day]))
+  return Array.from({length:requirement.days},(_,index)=>{
+    const day=byDay.get(index+1)||emptyTripDay(index+1,requirement)
     const activities=day.activities.length?day.activities:[]
     const route=activities.map(item=>item.title.split('→')[0].trim()).filter(Boolean).slice(0,5)
     const tickets=day.estimatedCost?.tickets??Math.max(0,activities.reduce((sum,item)=>sum+(item.cost||0),0)*requirement.peopleCount)
@@ -384,6 +408,67 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
       ].filter(Boolean)).slice(0,3),
     }
   })
+}
+
+async function ensureDayGenerated(index:number,forceRegenerate=false){
+  const target=days.value[index]
+  if(!target||!result.value?.requirement)return
+  if(!forceRegenerate&&target.moments.length>0){
+    days.value[index]={...target,status:'active'}
+    return
+  }
+  if(!generationSessionId.value)throw new Error('缺少行程生成会话，请重新生成')
+  days.value[index]={...target,status:'generating',subtitle:'正在生成这一天的行程...'}
+  const day=await aiApi.generateDay(generationSessionId.value,target.day,{requestMode:'USER',forceRegenerate,prefetchNext:!forceRegenerate})
+  const oneDayPlan={...(plan.value||emptyTripPlan(result.value.requirement)),dailyPlans:[day]}
+  const builtDays=createBuilderDays(oneDayPlan,result.value.requirement,hasRental.value&&!!selectedQuote.value)
+  const builderDay=builtDays.find(item=>Number(item.day)===Number(target.day))
+    ||builtDays.find(item=>Number(item.day)===Number(day.day))
+    ||builtDays[index]
+  if(!builderDay){
+    throw new Error(`第 ${target.day} 天生成完成但前端组装失败`)
+  }
+  days.value[index]={...builderDay,status:'active'}
+  if(plan.value){
+    const existing=plan.value.dailyPlans.filter(item=>item.day!==day.day)
+    plan.value={...plan.value,dailyPlans:[...existing,day].sort((a,b)=>a.day-b.day)}
+  }
+}
+
+function buildInitialBuilderDays(generatedDays:BuilderDay[],requirement:Requirement,rentalEnabled:boolean):BuilderDay[]{
+  const total=Math.max(1,requirement.days||generatedDays.length||1)
+  const result:BuilderDay[]=[...generatedDays]
+  for(let dayNo=result.length+1;dayNo<=total;dayNo++){
+    result.push(createPendingBuilderDay(dayNo,requirement,rentalEnabled))
+  }
+  return result.map((day,index)=>({...day,status:index===0?'active':day.status}))
+}
+
+function createPendingBuilderDay(dayNo:number,requirement:Requirement,rentalEnabled:boolean):BuilderDay{
+  const image=coverForDestination(requirement.destination)
+  return {
+    day:dayNo,
+    title:`${requirement.destination}第 ${dayNo} 天行程`,
+    subtitle:'确认上一天后生成这一日安排',
+    intensity:requirement.pace,
+    accommodation:'',
+    diningArea:'',
+    status:'pending',
+    route:[],
+    moments:[],
+    foods:[],
+    budget:{tickets:0,food:0,traffic:0,other:0,total:0},
+    rental:{enabled:rentalEnabled,departure:`${requirement.destination}核心范围`,duration:'待生成',mileage:0,fuelCost:0},
+    tips:['确认上一天后，系统会生成这一日行程。'],
+  }
+}
+
+function emptyTripPlan(requirement:Requirement):TripPlan{
+  return{title:`${requirement.destination}${requirement.days}日旅行方案`,destination:requirement.destination,days:requirement.days,summary:'按天生成中',dailyPlans:[],accommodation:'',budgetSummary:{transport:0,hotel:null,food:0,tickets:0,total:0},tips:[]}
+}
+
+function emptyTripDay(dayNo:number,requirement:Requirement):TripDay{
+  return{day:dayNo,title:`Day ${dayNo} 待生成`,activities:[],food:[],budget:0,intensity:requirement.pace,tips:['点击确认上一天后生成这一天行程']}
 }
 
 function daySubtitle(day:TripDay,activities:any[],travelPace:string,rentalEnabled:boolean){
@@ -751,7 +836,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
             <section class="map-control-panel builder-card">
               <div class="map-progress-dots" aria-label="行程进度">
                 <template v-for="(day,index) in days" :key="day.day">
-                  <span :class="{ active: day.day===currentDay.day, locked: day.status==='locked' }">{{ String(day.day).padStart(2,'0') }}</span>
+                  <button type="button" :class="{ active: day.day===currentDay.day, locked: day.status==='locked', generating: day.status==='generating' }" @click="selectDay(index)">{{ String(day.day).padStart(2,'0') }}</button>
                   <i v-if="index<days.length-1"></i>
                 </template>
               </div>
@@ -1124,25 +1209,32 @@ function coordinateForPlace(title:string,destination:string,index:number){
   min-height: 32px;
 }
 
-.map-progress-dots span {
+.map-progress-dots button {
   width: 30px;
   height: 30px;
+  border: 1px solid #dce4ed;
   border-radius: 50%;
   display: grid;
   place-items: center;
   color: #718096;
   background: #eef3f8;
-  border: 1px solid #dce4ed;
   font-size: 12px;
   font-weight: 900;
+  cursor: pointer;
 }
 
-.map-progress-dots span.active,
-.map-progress-dots span.locked {
+.map-progress-dots button.active,
+.map-progress-dots button.locked {
   color: #fff;
   border-color: #0f9f8f;
   background: #0f9f8f;
   box-shadow: 0 12px 24px rgba(15, 159, 143, .2);
+}
+
+.map-progress-dots button.generating {
+  color: #fff;
+  border-color: #2563eb;
+  background: #2563eb;
 }
 
 .map-progress-dots i {

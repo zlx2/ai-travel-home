@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowRight, Calendar, Camera, Collection, Document, EditPen, Lock, Star, UploadFilled, User } from '@element-plus/icons-vue'
+import { ArrowRight, Calendar, Camera, Collection, Document, EditPen, Lock, Star, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { userApi, fileApi, tripApi, noteApi } from '../../api'
 import { useUserStore } from '../../stores/user'
@@ -31,7 +31,8 @@ const confirmChangeEmail=async()=>{const re=/^\S+@\S+\.\S+$/;if(!emailForm.newEm
         <div class="profile-summary">
           <div class="hero-avatar-wrap">
             <el-avatar :size="104" :src="form.avatarUrl" class="hero-avatar"><User /></el-avatar>
-            <button class="avatar-camera" type="button" @click="triggerUpload"><el-icon><Camera /></el-icon></button>
+            <button class="avatar-camera" type="button" :disabled="uploading || saving" title="更换头像" aria-label="更换头像" @click="triggerUpload"><el-icon><Camera /></el-icon></button>
+            <input ref="fileInputRef" type="file" accept="image/jpeg,image/png,image/webp" style="display:none" @change="onFileSelected" />
           </div>
           <div class="profile-title">
             <div class="title-line">
@@ -80,18 +81,6 @@ const confirmChangeEmail=async()=>{const re=/^\S+@\S+\.\S+$/;if(!emailForm.newEm
               <el-input v-model="form.nickname" maxlength="20" placeholder="请输入昵称">
                 <template #suffix>{{ form.nickname.length }} / 20</template>
               </el-input>
-            </div>
-
-            <div class="setting-row avatar-row">
-              <label>头像</label>
-              <div class="avatar-upload-row">
-                <el-avatar :size="58" :src="form.avatarUrl"><User /></el-avatar>
-                <div>
-                  <el-button :loading="uploading" plain @click="triggerUpload"><el-icon><UploadFilled /></el-icon>点击上传</el-button>
-                  <p>支持 JPG / PNG / WebP，大小不超过 5MB</p>
-                </div>
-                <input ref="fileInputRef" type="file" accept="image/jpeg,image/png,image/webp" style="display:none" @change="onFileSelected" />
-              </div>
             </div>
 
             <div class="form-actions">
@@ -402,34 +391,6 @@ const confirmChangeEmail=async()=>{const re=/^\S+@\S+\.\S+$/;if(!emailForm.newEm
   white-space: nowrap;
 }
 
-.avatar-row {
-  min-height: 96px;
-}
-
-.avatar-upload-row {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.avatar-upload-row .el-avatar {
-  box-shadow: 0 7px 18px rgba(15, 23, 42, .12);
-}
-
-.avatar-upload-row .el-button {
-  min-width: 170px;
-  height: 36px;
-  border-style: dashed;
-  border-color: #bfd6f8;
-  color: #2f80ed;
-}
-
-.avatar-upload-row p {
-  margin: 8px 0 0;
-  color: #7a8492;
-  font-size: 12px;
-}
-
 .form-actions {
   display: flex;
   justify-content: flex-start;
@@ -716,14 +677,12 @@ const confirmChangeEmail=async()=>{const re=/^\S+@\S+\.\S+$/;if(!emailForm.newEm
   }
 
   .email-row,
-  .avatar-upload-row,
   .code-row {
     align-items: stretch;
     flex-direction: column;
   }
 
   .email-row .el-button,
-  .avatar-upload-row .el-button,
   .code-row .el-button {
     width: 100%;
   }

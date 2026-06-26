@@ -115,7 +115,7 @@ const imageOfNote = (note: Note) =>
   min-height: 410px;
   position: relative;
   overflow: hidden;
-  background-image: linear-gradient(90deg, rgba(242,250,255,.97) 0%, rgba(230,246,255,.85) 32%, rgba(213,239,251,.16) 60%), var(--hero-cos-image), url('/assets/hero-chongqing-v2.png');
+  background-image: linear-gradient(90deg, rgba(242,250,255,.97) 0%, rgba(230,246,255,.85) 32%, rgba(213,239,251,.16) 60%), var(--hero-cos-image);
   background-position: center;
   background-size: cover;
 }
@@ -162,7 +162,7 @@ const imageOfNote = (note: Note) =>
 .mock-route small { font-size: 9px; color: #7c8797; }
 .mock-route a { display: block; color: #176ff1; font-size: 10px; margin-top: 3px; }
 .mock-side { padding: 15px 11px 9px 2px; }
-.map-card { height: 56%; border: 5px solid #fff; border-radius: 14px; background-image: var(--map-cos-image), url('/assets/map-card.jpg'); background-position: center; background-size: cover; box-shadow: 0 4px 14px #647c8f42; }
+.map-card { height: 56%; border: 5px solid #fff; border-radius: 14px; background-image: var(--map-cos-image); background-position: center; background-size: cover; box-shadow: 0 4px 14px #647c8f42; }
 .ai-tip { min-height: 94px; margin-top: 9px; border-radius: 11px; background: #fff; padding: 11px; box-shadow: 0 4px 14px #647c8f22; position: relative; }
 .ai-tip b { font-size: 11px; color: #176ff1; }
 .ai-tip p { font-size: 9px; line-height: 1.55; width: 135px; color: #5e6a7b; }

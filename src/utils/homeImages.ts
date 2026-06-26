@@ -4,8 +4,6 @@ const DEFAULT_HOME_IMAGE_BASE_URL =
 const HOME_IMAGE_BASE_URL = (import.meta.env.VITE_HOME_IMAGE_BASE_URL || DEFAULT_HOME_IMAGE_BASE_URL)
   .replace(/\/+$/, '')
 
-const HOME_IMAGE_LOCAL_BASE = '/assets'
-
 const destinationFiles: Record<string, string> = {
   重庆: 'chongqing.jpg',
   成都: 'chengdu.jpg',
@@ -37,16 +35,13 @@ const unique = (items: Array<string | undefined>) => {
 
 const isHttpUrl = (value: string) => /^https?:\/\//i.test(value)
 
-export const homeCosImage = (fileName: string) =>
-  HOME_IMAGE_BASE_URL ? `${HOME_IMAGE_BASE_URL}/${fileName}` : undefined
-
-export const homeLocalImage = (fileName: string, highQuality = false) =>
-  `${HOME_IMAGE_LOCAL_BASE}/${highQuality ? 'hq/' : ''}${fileName}`
+export const homeCosImage = (fileName: string, highQuality = false) =>
+  HOME_IMAGE_BASE_URL ? `${HOME_IMAGE_BASE_URL}/${highQuality ? 'hq/' : ''}${fileName}` : undefined
 
 export const cssImage = (url?: string) => (url ? `url("${url}")` : 'none')
 
 export const homeImageCandidates = (fileName: string, preferredUrl?: string, highQuality = false) =>
-  unique([preferredUrl, homeCosImage(fileName), homeLocalImage(fileName, highQuality)])
+  unique([preferredUrl, homeCosImage(fileName, highQuality)])
 
 export const homeImage = (fileName: string, highQuality = false) =>
   homeImageCandidates(fileName, undefined, highQuality)[0]

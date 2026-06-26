@@ -11,6 +11,7 @@ import RequirementSummaryBar from '../../components/trip-builder/RequirementSumm
 import TripRouteMap, { type TripMapPlace } from '../../components/trip-builder/TripRouteMap.vue'
 import type { BuilderDay, BuilderStep, RentalQuote } from '../../components/trip-builder/types'
 import type { AnalyzeResult, RecommendationContext, Requirement, TripDay, TripPlan } from '../../types'
+import { homeImage } from '../../utils/homeImages'
 
 const route=useRoute()
 const userInput=ref('带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')
@@ -332,12 +333,12 @@ const sandboxPay=()=>{
 }
 
 function coverForDestination(destination:string){
-  if(destination.includes('杭州'))return'/assets/hq/hangzhou.jpg'
-  if(destination.includes('成都'))return'/assets/hq/chengdu.jpg'
-  if(destination.includes('厦门'))return'/assets/hq/xiamen.jpg'
-  if(destination.includes('西安'))return'/assets/hq/xian.jpg'
-  if(destination.includes('云南'))return'/assets/hq/yunnan.jpg'
-  return'/assets/hq/chongqing.jpg'
+  if(destination.includes('杭州'))return homeImage('hangzhou.jpg', true)
+  if(destination.includes('成都'))return homeImage('chengdu.jpg', true)
+  if(destination.includes('厦门'))return homeImage('xiamen.jpg', true)
+  if(destination.includes('西安'))return homeImage('xian.jpg', true)
+  if(destination.includes('云南'))return homeImage('yunnan.jpg', true)
+  return homeImage('chongqing.jpg', true)
 }
 
 function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean):BuilderDay[]{
@@ -591,7 +592,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
         </div>
 
         <aside class="hero-preview">
-          <img src="/assets/hq/hangzhou.jpg" alt="行程预览">
+          <img :src="homeImage('hangzhou.jpg', true)" alt="行程预览">
           <div class="preview-card">
             <span>示例行程</span>
             <b>杭州 3 日轻松慢游</b>

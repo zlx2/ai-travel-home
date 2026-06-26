@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Check, CreditCard, Lock, Refresh, Van } from '@element-plus/icons-vue'
 import type { FinalReviewData } from './types'
+import { homeImage } from '../../utils/homeImages'
 
 defineProps<{ data:FinalReviewData; saving:boolean; orderCreated:boolean; paid:boolean }>()
 const emit=defineEmits<{ createOrder:[]; sandboxPay:[]; back:[] }>()
+const fallbackCover=homeImage('hangzhou.jpg', true)
 </script>
 
 <template>
@@ -17,7 +19,7 @@ const emit=defineEmits<{ createOrder:[]; sandboxPay:[]; back:[] }>()
     </div>
 
     <article class="hero-summary builder-card">
-      <img src="/assets/hq/hangzhou.jpg" alt="trip cover">
+      <img :src="fallbackCover" alt="trip cover">
       <div>
         <span>{{ data.requirement.preferences[0] || '自然风光' }} · 悠闲探索</span>
         <h2>{{ data.requirement.destination }} {{ data.requirement.days }} 日悠闲之旅</h2>

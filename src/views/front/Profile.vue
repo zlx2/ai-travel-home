@@ -5,8 +5,10 @@ import { ArrowRight, Calendar, Camera, Collection, Document, EditPen, Lock, Star
 import { ElMessage } from 'element-plus'
 import { userApi, fileApi, tripApi, noteApi } from '../../api'
 import { useUserStore } from '../../stores/user'
+import { cssImage, homeCosImage } from '../../utils/homeImages'
 const store=useUserStore(),router=useRouter(),loading=ref(true),saving=ref(false),uploading=ref(false),fileInputRef=ref<HTMLInputElement|null>(null),form=reactive({nickname:'',avatarUrl:'',username:'',email:'',createTime:''})
 const stats=reactive({trips:0,notes:0,likes:0,favorites:0})
+const profileBannerImage=cssImage(homeCosImage('profile-lake-banner.png'))
 // 修改邮箱相关状态
 const emailDialogVisible=ref(false),emailChanging=ref(false),emailCodeSending=ref(false),emailCodeSeconds=ref(0);let emailCodeTimer:number|null=null
 const emailForm=reactive({newEmail:'',emailCode:''})
@@ -24,7 +26,7 @@ const confirmChangeEmail=async()=>{const re=/^\S+@\S+\.\S+$/;if(!emailForm.newEm
 <template>
   <div class="page profile-page">
     <div class="container profile-container" v-loading="loading">
-      <section class="profile-hero">
+      <section class="profile-hero" :style="{ '--profile-banner-image': profileBannerImage }">
         <div class="profile-cover"></div>
         <div class="profile-summary">
           <div class="hero-avatar-wrap">
@@ -179,7 +181,7 @@ const confirmChangeEmail=async()=>{const re=/^\S+@\S+\.\S+$/;if(!emailForm.newEm
   height: 124px;
   background:
     linear-gradient(90deg, rgba(47, 128, 237, .12), rgba(255, 255, 255, 0) 45%),
-    url('/assets/profile-lake-banner.png') center 48% / cover;
+    var(--profile-banner-image) center 48% / cover;
 }
 
 .profile-summary {

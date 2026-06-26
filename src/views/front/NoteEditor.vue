@@ -4,8 +4,9 @@ import { useRoute,useRouter } from 'vue-router'
 import { DocumentChecked, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { baseApi, noteApi } from '../../api'
+import { homeImage } from '../../utils/homeImages'
 const route=useRoute(),router=useRouter(),loading=ref(false),tagList=ref<any[]>([]),isEdit=Boolean(route.params.id)
-const form=reactive({title:'',coverUrl:'/assets/chongqing.jpg',destination:'重庆',summary:'',content:'# 写下你的旅行故事\n\n从这里开始记录...',tagIds:[] as number[],status:1})
+const form=reactive({title:'',coverUrl:homeImage('chongqing.jpg'),destination:'重庆',summary:'',content:'# 写下你的旅行故事\n\n从这里开始记录...',tagIds:[] as number[],status:1})
 onMounted(async()=>{tagList.value=await baseApi.tags();if(isEdit){const data=await noteApi.detail(Number(route.params.id));Object.assign(form,{...data,tagIds:data.tagIds})}})
 const chooseCover=(file:any)=>{form.coverUrl=URL.createObjectURL(file.raw)}
 const submit=async(status:number)=>{if(!form.title||!form.destination||!form.summary||!form.content)return ElMessage.warning('请完整填写标题、目的地、摘要和正文');loading.value=true;try{const selected=tagList.value.filter(t=>form.tagIds.includes(t.id)).map(t=>t.name);const data=await noteApi.save({...form,status,tags:selected},isEdit?Number(route.params.id):undefined);ElMessage.success(status===0?'草稿已保存':'游记已发布');router.push(isEdit?`/notes/${route.params.id}`:`/notes/${data.id}`)}finally{loading.value=false}}

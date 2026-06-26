@@ -1,8 +1,16 @@
 import type { Comment, Destination, Note, Requirement, Trip, TripPlan, UserInfo } from '../types'
+import { homeImage } from '../utils/homeImages'
 
 export const USE_MOCK=import.meta.env.VITE_USE_MOCK!=='false'
 export const delay=(ms=350)=>new Promise(resolve=>setTimeout(resolve,ms))
-const images=['/assets/hq/chongqing.jpg','/assets/hq/chengdu.jpg','/assets/hq/xian.jpg','/assets/hq/hangzhou.jpg','/assets/hq/xiamen.jpg','/assets/hq/yunnan.jpg']
+const images=[
+  homeImage('chongqing.jpg', true),
+  homeImage('chengdu.jpg', true),
+  homeImage('xian.jpg', true),
+  homeImage('hangzhou.jpg', true),
+  homeImage('xiamen.jpg', true),
+  homeImage('yunnan.jpg', true),
+]
 const now='2026-06-20 10:00:00'
 export const destinations:Destination[]=[
   {id:1,name:'重庆',coverUrl:images[0],description:'山城夜景与火锅美食目的地',tags:['美食','夜景'],heat:98,status:1,province:'重庆',city:'重庆',createTime:now},

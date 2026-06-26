@@ -63,3 +63,5 @@ export const noteApi={
 }
 export const baseApi={async tags(){if(!USE_MOCK)return request.get('/tags');return tags},async destinations(){if(!USE_MOCK)return request.get('/destinations');return destinations}}
 export const userApi={async me(){if(!USE_MOCK)return request.get('/users/me') as Promise<UserInfo>;await delay();return users[0]},async update(value:Partial<UserInfo>){if(!USE_MOCK)return request.put('/users/me',value);await delay();Object.assign(users[0],value);return users[0]}}
+export interface FileUploadResponse {url:string;objectKey:string;fileName:string;size:number}
+export const fileApi={upload(file:File,bizType='avatar'){const fd=new FormData();fd.append('file',file);return request.post('/files/upload',fd,{params:{bizType}}) as Promise<FileUploadResponse>}}

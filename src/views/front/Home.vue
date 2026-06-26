@@ -4,12 +4,22 @@ import { useRouter } from 'vue-router'
 import { Calendar, Collection, MagicStick, MapLocation } from '@element-plus/icons-vue'
 import { homeApi } from '../../api'
 import type { Destination, Note } from '../../types'
+import {
+  cssImage,
+  destinationImageCandidates,
+  homeCosImage,
+  homeImageCandidates,
+  setNextHomeImage,
+} from '../../utils/homeImages'
 
 const router = useRouter()
 const loading = ref(true)
 const destinations = ref<Destination[]>([])
 const notes = ref<Note[]>([])
 const routes = ref<any[]>([])
+const heroCosImage = cssImage(homeCosImage('hero-chongqing-v2.png'))
+const mapCosImage = cssImage(homeCosImage('map-card.jpg'))
+const avatarCandidates = homeImageCandidates('traveler-avatars.png')
 const defaultRoutes = [
   { destination: '重庆', days: 3, preferences: ['美食', '夜景'] },
   { destination: '成都', days: 4, preferences: ['美食', '轻松游'] },
@@ -35,11 +45,20 @@ const useRoute = (item: any) => router.push({
   query: { destination: item.destination, days: item.days, preferences: item.preferences.join(',') },
 })
 
+const imageOfDestination = (item?: Pick<Destination, 'name' | 'coverUrl'>) =>
+  destinationImageCandidates(item?.name, item?.coverUrl)
+
+const imageOfRoute = (item: any, index: number) =>
+  destinationImageCandidates(item.destination, destinations.value[index]?.coverUrl)
+
+const imageOfNote = (note: Note) =>
+  destinationImageCandidates(note.destination, note.coverUrl)
+
 </script>
 
 <template>
   <div class="compact-home" v-loading="loading">
-    <section class="reference-hero">
+    <section class="reference-hero" :style="{ '--hero-cos-image': heroCosImage }">
       <div class="container hero-grid">
         <div class="hero-copy">
           <h1>用 AI 轻松规划<br><span>你的下一次旅行</span></h1>
@@ -48,7 +67,7 @@ const useRoute = (item: any) => router.push({
             <el-button class="gradient-button" type="primary" size="large" @click="router.push('/ai-trip')"><el-icon><MagicStick /></el-icon>立即开始 AI 规划</el-button>
             <el-button size="large" @click="router.push('/notes')"><el-icon><Collection /></el-icon>查看热门游记</el-button>
           </div>
-          <div class="hero-proof"><img src="/assets/traveler-avatars.png"><b>10万+</b><span>旅行者已体验 AI 规划</span></div>
+          <div class="hero-proof"><img :src="avatarCandidates[0]" @error="setNextHomeImage($event, avatarCandidates)"><b>10万+</b><span>旅行者已体验 AI 规划</span></div>
         </div>
 
         <div class="planner-mock">
@@ -61,7 +80,7 @@ const useRoute = (item: any) => router.push({
               <p>2026/06/22 - 06/24　·　2 人出行</p>
               <div class="mock-route"><h3>行程概览</h3><div><em></em><b>洪崖洞夜景</b><small>璀璨夜色，重庆地标打卡</small></div><div><em class="green"></em><b>长江索道</b><small>横跨长江，俯瞰山城风光</small></div><div><em class="orange"></em><b>磁器口古镇</b><small>老街古镇，体验传统文化</small></div><a>查看完整行程 ›</a></div>
             </div>
-            <div class="mock-side"><div class="map-card"></div><div class="ai-tip"><b>AI 小贴士</b><p>重庆夏季多雨，建议携带轻便雨具与舒适步行鞋。</p><span>✦</span></div></div>
+            <div class="mock-side"><div class="map-card" :style="{ '--map-cos-image': mapCosImage }"></div><div class="ai-tip"><b>AI 小贴士</b><p>重庆夏季多雨，建议携带轻便雨具与舒适步行鞋。</p><span>✦</span></div></div>
           </div>
         </div>
       </div>
@@ -70,12 +89,12 @@ const useRoute = (item: any) => router.push({
 
     <div class="home-body">
       <section class="container compact-dashboard">
-        <article class="dash-panel destination-panel"><div class="panel-head"><h3>热门目的地</h3><a>查看更多 ›</a></div><div class="mini-destinations"><button v-for="item in destinations" :key="item.id"><img :src="item.coverUrl"><span>{{ item.name }}</span></button></div></article>
+        <article class="dash-panel destination-panel"><div class="panel-head"><h3>热门目的地</h3><a>查看更多 ›</a></div><div class="mini-destinations"><button v-for="item in destinations" :key="item.id"><img :src="imageOfDestination(item)[0]" @error="setNextHomeImage($event, imageOfDestination(item))"><span>{{ item.name }}</span></button></div></article>
         <div class="dash-middle">
           <article class="dash-panel tag-panel"><h3>热门标签</h3><div><el-tag v-for="tag in ['美食','夜景','亲子','轻松游','拍照打卡','文化历史','海岛','徒步','自驾']" :key="tag" round effect="light">{{ tag }}</el-tag></div></article>
-          <article class="dash-panel route-panel"><div class="panel-head"><h3>推荐行程</h3><a>查看更多 ›</a></div><div class="mini-routes"><button v-for="(item, i) in routes" :key="item.destination" @click="useRoute(item)"><img :src="destinations[i]?.coverUrl"><b>{{ item.destination }} {{ item.days }} 日游</b><span>{{ item.preferences.join(' · ') }}</span></button></div></article>
+          <article class="dash-panel route-panel"><div class="panel-head"><h3>推荐行程</h3><a>查看更多 ›</a></div><div class="mini-routes"><button v-for="(item, i) in routes" :key="item.destination" @click="useRoute(item)"><img :src="imageOfRoute(item, i)[0]" @error="setNextHomeImage($event, imageOfRoute(item, i))"><b>{{ item.destination }} {{ item.days }} 日游</b><span>{{ item.preferences.join(' · ') }}</span></button></div></article>
         </div>
-        <article class="dash-panel note-panel"><div class="panel-head"><h3>热门游记</h3><a @click="router.push('/notes')">查看更多 ›</a></div><div class="mini-notes"><button v-for="note in notes" :key="note.id" @click="router.push(`/notes/${note.id}`)"><img :src="note.coverUrl"><b>{{ note.title }}</b><p>{{ note.summary }}</p><div><span>{{ note.authorNickname }}</span><small>♥ {{ note.likeCount }}</small></div></button></div></article>
+        <article class="dash-panel note-panel"><div class="panel-head"><h3>热门游记</h3><a @click="router.push('/notes')">查看更多 ›</a></div><div class="mini-notes"><button v-for="note in notes" :key="note.id" @click="router.push(`/notes/${note.id}`)"><img :src="imageOfNote(note)[0]" @error="setNextHomeImage($event, imageOfNote(note))"><b>{{ note.title }}</b><p>{{ note.summary }}</p><div><span>{{ note.authorNickname }}</span><small>♥ {{ note.likeCount }}</small></div></button></div></article>
       </section>
     </div>
   </div>
@@ -96,7 +115,9 @@ const useRoute = (item: any) => router.push({
   min-height: 410px;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(90deg, rgba(242,250,255,.97) 0%, rgba(230,246,255,.85) 32%, rgba(213,239,251,.16) 60%), url('/assets/hero-chongqing-v2.png') center/cover;
+  background-image: linear-gradient(90deg, rgba(242,250,255,.97) 0%, rgba(230,246,255,.85) 32%, rgba(213,239,251,.16) 60%), var(--hero-cos-image), url('/assets/hero-chongqing-v2.png');
+  background-position: center;
+  background-size: cover;
 }
 .hero-grid {
   height: 100%;
@@ -141,7 +162,7 @@ const useRoute = (item: any) => router.push({
 .mock-route small { font-size: 9px; color: #7c8797; }
 .mock-route a { display: block; color: #176ff1; font-size: 10px; margin-top: 3px; }
 .mock-side { padding: 15px 11px 9px 2px; }
-.map-card { height: 56%; border: 5px solid #fff; border-radius: 14px; background: url('/assets/map-card.jpg') center/cover; box-shadow: 0 4px 14px #647c8f42; }
+.map-card { height: 56%; border: 5px solid #fff; border-radius: 14px; background-image: var(--map-cos-image), url('/assets/map-card.jpg'); background-position: center; background-size: cover; box-shadow: 0 4px 14px #647c8f42; }
 .ai-tip { min-height: 94px; margin-top: 9px; border-radius: 11px; background: #fff; padding: 11px; box-shadow: 0 4px 14px #647c8f22; position: relative; }
 .ai-tip b { font-size: 11px; color: #176ff1; }
 .ai-tip p { font-size: 9px; line-height: 1.55; width: 135px; color: #5e6a7b; }

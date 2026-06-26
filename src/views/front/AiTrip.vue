@@ -414,7 +414,10 @@ async function ensureDayGenerated(index:number,forceRegenerate=false){
   const target=days.value[index]
   if(!target||!result.value?.requirement)return
   if(!forceRegenerate&&target.moments.length>0){
-    days.value[index]={...target,status:'active'}
+    days.value[index]={
+      ...target,
+      status:target.status==='locked'?'locked':'active'
+    }
     return
   }
   if(!generationSessionId.value)throw new Error('缺少行程生成会话，请重新生成')
@@ -430,8 +433,31 @@ async function ensureDayGenerated(index:number,forceRegenerate=false){
   }
   days.value[index]={...builderDay,status:'active'}
   if(plan.value){
-    const existing=plan.value.dailyPlans.filter(item=>item.day!==day.day)
-    plan.value={...plan.value,dailyPlans:[...existing,day].sort((a,b)=>a.day-b.day)}
+    const existing=plan.value.dailyPlans.filter(item=>Number(item.day)!==Number(day.day))
+    const merged=[...existing,day].sort((a,b)=>Number(a.day)-Number(b.day))
+    plan.value={
+      ...plan.value,
+      dailyPlans:merged,
+      budgetSummary:rebuildBudgetSummary(merged,plan.value.budgetSummary),
+    }
+  }
+}
+
+function rebuildBudgetSummary(dailyPlans:TripDay[],current?:TripPlan['budgetSummary']):TripPlan['budgetSummary']{
+  const summary=dailyPlans.reduce((acc,day)=>{
+    const cost=day.estimatedCost
+    acc.food+=Number(cost?.food||0)
+    acc.tickets+=Number(cost?.tickets||0)
+    acc.transport+=Number(cost?.transport||0)
+    return acc
+  },{food:0,tickets:0,transport:0})
+  return{
+    food:summary.food,
+    tickets:summary.tickets,
+    transport:summary.transport,
+    hotel:current?.hotel??null,
+    total:summary.food+summary.tickets+summary.transport+Number(current?.hotel||0),
+    excludesUnknownItems:dailyPlans.some(day=>day.estimatedCost?.excludesUnknownItems),
   }
 }
 

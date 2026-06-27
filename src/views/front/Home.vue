@@ -13,7 +13,7 @@ import {
 } from '../../utils/homeImages'
 
 const router = useRouter()
-const loading = ref(true)
+const homeLoading = ref(true)
 const destinations = ref<Destination[]>([])
 const notes = ref<Note[]>([])
 const routes = ref<any[]>([])
@@ -26,17 +26,18 @@ const defaultRoutes = [
   { destination: '西安', days: 3, preferences: ['历史文化', '拍照打卡'] },
   { destination: '厦门', days: 3, preferences: ['海岛', '轻松游'] },
 ]
+routes.value = defaultRoutes
 
 onMounted(async () => {
   try {
     const data = await homeApi.getHome()
-    destinations.value = data.hotDestinations
-    notes.value = data.hotNotes
+    destinations.value = data.hotDestinations || []
+    notes.value = data.hotNotes || []
     routes.value = data.recommendedTrips || defaultRoutes
   } catch {
-    // 请求层已统一提示错误；后端尚未实现时保留空数据，避免产生未处理异常。
+    routes.value = defaultRoutes
   } finally {
-    loading.value = false
+    homeLoading.value = false
   }
 })
 
@@ -57,7 +58,7 @@ const imageOfNote = (note: Note) =>
 </script>
 
 <template>
-  <div class="compact-home" v-loading="loading">
+  <div class="compact-home">
     <section class="reference-hero" :style="{ '--hero-cos-image': heroCosImage }">
       <div class="container hero-grid">
         <div class="hero-copy">
@@ -89,12 +90,12 @@ const imageOfNote = (note: Note) =>
 
     <div class="home-body">
       <section class="container compact-dashboard">
-        <article class="dash-panel destination-panel"><div class="panel-head"><h3>热门目的地</h3><a>查看更多 ›</a></div><div class="mini-destinations"><button v-for="item in destinations" :key="item.id"><img :src="imageOfDestination(item)[0]" @error="setNextHomeImage($event, imageOfDestination(item))"><span>{{ item.name }}</span></button></div></article>
+        <article class="dash-panel destination-panel"><div class="panel-head"><h3>热门目的地</h3><a>查看更多 ›</a></div><el-skeleton v-if="homeLoading && !destinations.length" class="home-skeleton grid-skeleton" :rows="3" animated /><div v-else class="mini-destinations"><button v-for="item in destinations" :key="item.id"><img :src="imageOfDestination(item)[0]" @error="setNextHomeImage($event, imageOfDestination(item))"><span>{{ item.name }}</span></button></div></article>
         <div class="dash-middle">
           <article class="dash-panel tag-panel"><h3>热门标签</h3><div><el-tag v-for="tag in ['美食','夜景','亲子','轻松游','拍照打卡','文化历史','海岛','徒步','自驾']" :key="tag" round effect="light">{{ tag }}</el-tag></div></article>
           <article class="dash-panel route-panel"><div class="panel-head"><h3>推荐行程</h3><a>查看更多 ›</a></div><div class="mini-routes"><button v-for="(item, i) in routes" :key="item.destination" @click="useRoute(item)"><img :src="imageOfRoute(item, i)[0]" @error="setNextHomeImage($event, imageOfRoute(item, i))"><b>{{ item.destination }} {{ item.days }} 日游</b><span>{{ item.preferences.join(' · ') }}</span></button></div></article>
         </div>
-        <article class="dash-panel note-panel"><div class="panel-head"><h3>热门游记</h3><a @click="router.push('/notes')">查看更多 ›</a></div><div class="mini-notes"><button v-for="note in notes" :key="note.id" @click="router.push(`/notes/${note.id}`)"><img :src="imageOfNote(note)[0]" @error="setNextHomeImage($event, imageOfNote(note))"><b>{{ note.title }}</b><p>{{ note.summary }}</p><div><span>{{ note.authorNickname }}</span><small>♥ {{ note.likeCount }}</small></div></button></div></article>
+        <article class="dash-panel note-panel"><div class="panel-head"><h3>热门游记</h3><a @click="router.push('/notes')">查看更多 ›</a></div><el-skeleton v-if="homeLoading && !notes.length" class="home-skeleton note-skeleton" :rows="4" animated /><div v-else class="mini-notes"><button v-for="note in notes" :key="note.id" @click="router.push(`/notes/${note.id}`)"><img :src="imageOfNote(note)[0]" @error="setNextHomeImage($event, imageOfNote(note))"><b>{{ note.title }}</b><p>{{ note.summary }}</p><div><span>{{ note.authorNickname }}</span><small>♥ {{ note.likeCount }}</small></div></button></div></article>
       </section>
     </div>
   </div>
@@ -174,6 +175,8 @@ const imageOfNote = (note: Note) =>
 .compact-dashboard { width: min(1840px, calc(100vw - 48px)) !important; margin-top: clamp(12px, 1.4vh, 16px); display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.2fr) minmax(0, 1.4fr); gap: clamp(10px, .8vw, 16px); align-items: stretch; }
 .compact-dashboard>* { min-height: 0; }
 .dash-panel { min-height: 0; background: #fff; border: 1px solid #e9eef3; border-radius: 13px; padding: 14px 16px; overflow: hidden; box-shadow: 0 8px 24px rgba(53,78,110,.045); }
+.home-skeleton { min-height: 118px; }
+.note-skeleton { min-height: 142px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; height: 25px; margin-bottom: 10px; }
 .panel-head h3,.tag-panel h3 { font-size: 17px; margin: 0; }
 .panel-head a { font-size: 12px; color: #7f8998; cursor: pointer; }

@@ -5,6 +5,7 @@ import type { AnalyzeResult, Comment, GenerateProgressEvent, GenerateResult, Not
 import { homeImage } from '../utils/homeImages'
 const request:any=requestClient
 const AI_GENERATE_TIMEOUT_MS=240000
+const HOME_TIMEOUT_MS=3000
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 
 const page=<T>(list:T[],pageNum=1,pageSize=10):PageResult<T>=>({list:list.slice((pageNum-1)*pageSize,pageNum*pageSize),total:list.length,pageNum,pageSize})
@@ -19,7 +20,7 @@ export const authApi={
   sendCode(email:string){return request.post('/auth/email-code',{email,scene:'register'}) as Promise<void>},
   logout(){return request.post('/auth/logout') as Promise<void>},
 }
-export const homeApi={async getHome(){if(!USE_MOCK){try{return await request.get('/home',{suppressError:true})}catch{return mockHome()}}await delay();return mockHome()}}
+export const homeApi={async getHome(){if(!USE_MOCK){try{return await request.get('/home',{suppressError:true,timeout:HOME_TIMEOUT_MS})}catch{return mockHome()}}await delay();return mockHome()}}
 export const aiApi={
   async analyze(payload:{conversationId?:string|null;userInput:string;extraAnswers?:string[];requirement?:Partial<Requirement>}):Promise<AnalyzeResult>{if(!USE_MOCK)return request.post('/ai/trips/analyze',payload);await delay(850);const text=[payload.userInput,...(payload.extraAnswers||[])].join(' ');const dest=payload.requirement?.destination||destinations.find(d=>text.includes(d.name))?.name||'';const departure=payload.requirement?.departure||text.match(/从([^去出发，, ]+)/)?.[1]||'';const days=Number(text.match(/(\d+)\s*天/)?.[1]||payload.requirement?.days||0);const questions=[];if(!departure)questions.push({field:'departure',question:'你准备从哪个城市出发？',required:true});if(!dest)questions.push({field:'destination',question:'你这次想去哪个目标城市？',required:true});if(!days)questions.push({field:'days',question:'这次旅行大概安排几天？',required:true});if(questions.length)return{conversationId:payload.conversationId||crypto.randomUUID(),status:'NEED_MORE_INFO',requirement:{...payload.requirement,departure,destination:dest,days} as Requirement,questions};const budget=Number(text.match(/预算\s*(\d+)/)?.[1]||payload.requirement?.budget||2000);const preferences=payload.requirement?.preferences?.length?payload.requirement.preferences:['美食','夜景'];return{conversationId:payload.conversationId||crypto.randomUUID(),status:'READY',requirement:{departure,destination:dest,days,budget,budgetType:'TOTAL',peopleCount:payload.requirement?.peopleCount||2,preferences,pace:payload.requirement?.pace||'LIGHT',avoidances:payload.requirement?.avoidances||['不早起'],travelDate:payload.requirement?.travelDate}}},
   async generate(conversationId:string,requirement:Requirement):Promise<GenerateResult>{if(!USE_MOCK){const data=await request.post('/ai/trips/generate',{conversationId,requirement},{timeout:AI_GENERATE_TIMEOUT_MS,suppressError:true});return normalizeGenerateResult(data)}await delay(1500);return{conversationId,requirement,recommendationContext:mockRecommendation(requirement),tripPlan:buildPlan(requirement)}},

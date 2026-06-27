@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, Calendar, Camera, Collection, Document, EditPen, Lock, Star, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { userApi, fileApi, tripApi, noteApi } from '../../api'
+import { userApi, fileApi } from '../../api'
 import { useUserStore } from '../../stores/user'
 import { cssImage, homeCosImage } from '../../utils/homeImages'
 const store=useUserStore(),router=useRouter(),loading=ref(true),saving=ref(false),uploading=ref(false),fileInputRef=ref<HTMLInputElement|null>(null),form=reactive({nickname:'',avatarUrl:'',username:'',email:'',createTime:''})
@@ -12,7 +12,9 @@ const profileBannerImage=cssImage(homeCosImage('profile-lake-banner.png'))
 // 修改邮箱相关状态
 const emailDialogVisible=ref(false),emailChanging=ref(false),emailCodeSending=ref(false),emailCodeSeconds=ref(0);let emailCodeTimer:number|null=null
 const emailForm=reactive({newEmail:'',emailCode:''})
-onMounted(async()=>{try{const data=await userApi.me();Object.assign(form,data);const [tripData,noteData]=await Promise.all([tripApi.list({pageNum:1,pageSize:1}),noteApi.mine({pageNum:1,pageSize:1000})]);stats.trips=tripData.total;stats.notes=noteData.total;stats.likes=noteData.list.reduce((sum,n)=>sum+(n.likeCount||0),0);stats.favorites=noteData.list.reduce((sum,n)=>sum+(n.favoriteCount||0),0)}finally{loading.value=false}})
+const loadProfile=async()=>{const data=await userApi.me();Object.assign(form,data)}
+const loadStats=async()=>{const data=await userApi.stats();stats.trips=data.tripCount||0;stats.notes=data.noteCount||0;stats.likes=data.likeCount||0;stats.favorites=data.favoriteCount||0}
+onMounted(async()=>{try{await Promise.all([loadProfile(),loadStats()])}finally{loading.value=false}})
 onUnmounted(()=>{if(emailCodeTimer!==null){clearInterval(emailCodeTimer);emailCodeTimer=null}})
 const save=async()=>{saving.value=true;try{await userApi.update({nickname:form.nickname,avatarUrl:form.avatarUrl});const data=await userApi.me();Object.assign(form,data);store.updateUser(data);ElMessage.success('个人资料已更新')}catch{/* 请求层统一展示后端错误。 */}finally{saving.value=false}}
 const triggerUpload=()=>fileInputRef.value?.click()

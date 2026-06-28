@@ -1,19 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute,useRouter } from 'vue-router'
-import { ChatDotRound, Delete, Download, Edit, MagicStick } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { aiApi, tripApi } from '../../api'
-import TripPlanView from '../../components/trip/TripPlanView.vue'
-import type { Trip } from '../../types'
-const route=useRoute(),router=useRouter(),trip=ref<Trip|null>(null),loading=ref(true),editing=ref(false),title=ref(''),question=ref(''),chatLoading=ref(false),messages=ref<{role:string;text:string}[]>([])
-const id=computed(()=>Number(route.params.id))
-onMounted(async()=>{try{trip.value=await tripApi.detail(id.value);title.value=trip.value.title}catch(e:any){ElMessage.error(e.message);router.push('/trips')}finally{loading.value=false}})
-const saveTitle=async()=>{await tripApi.update(id.value,{title:title.value});if(trip.value)trip.value.title=title.value;editing.value=false;ElMessage.success('标题已更新')}
-const remove=async()=>{await ElMessageBox.confirm('删除后无法恢复，确定继续吗？','删除行程',{type:'warning'});await tripApi.remove(id.value);router.push('/trips')}
-const ask=async(text?:string)=>{const content=text||question.value;if(!content)return;messages.value.push({role:'user',text:content});question.value='';chatLoading.value=true;try{const data=await aiApi.chat(content,id.value);messages.value.push({role:'ai',text:data.reply})}finally{chatLoading.value=false}}
+import { useRouter } from 'vue-router'
+const router=useRouter()
 </script>
-<template><div class="page trip-detail" v-loading="loading"><div class="container" v-if="trip"><div class="detail-header"><div><router-link to="/trips">← 返回我的行程</router-link><div class="title-row" v-if="!editing"><h1>{{trip.title}}</h1><el-button circle text :icon="Edit" @click="editing=true"/></div><div class="edit-title" v-else><el-input v-model="title" size="large"/><el-button type="primary" @click="saveTitle">保存</el-button><el-button @click="editing=false">取消</el-button></div><p>{{trip.destination}} · {{trip.days}} 天 · 创建于 {{trip.createTime}}</p></div><div><el-dropdown @command="ElMessage.info('导出功能将在后续开放')"><el-button :icon="Download">导出</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item>导出为 PDF</el-dropdown-item><el-dropdown-item>导出为图片</el-dropdown-item></el-dropdown-menu></template></el-dropdown><el-button type="danger" plain :icon="Delete" @click="remove">删除</el-button></div></div><TripPlanView :plan="trip.tripPlanJson"/>
-      <section class="ai-chat card"><div class="chat-head"><span><el-icon><MagicStick/></el-icon></span><div><h2>问问 AI，这个行程还能怎么优化？</h2><p>AI 只提供建议，不会自动修改已保存的行程。</p></div></div><div class="quick-questions"><button v-for="q in ['第二天会不会太累？','帮我改得轻松一点','预算还能再低一点吗？','适合带父母去吗？']" :key="q" @click="ask(q)">{{q}}</button></div><div class="chat-messages" v-if="messages.length"><div v-for="(msg,i) in messages" :key="i" :class="msg.role"><b>{{msg.role==='ai'?'AI 旅伴':'我'}}</b><p>{{msg.text}}</p></div><div v-if="chatLoading" class="ai"><b>AI 旅伴</b><p>正在思考更合适的建议...</p></div></div><div class="chat-input"><el-input v-model="question" placeholder="继续追问行程细节..." @keyup.enter="ask()"/><el-button class="gradient-button" type="primary" :loading="chatLoading" @click="ask()"><el-icon><ChatDotRound/></el-icon>发送</el-button></div></section>
-    </div></div></template>
-<style scoped>.trip-detail{padding-top:34px}.detail-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:25px}.detail-header>a,.detail-header a{font-size:13px;color:#6e8aa7}.title-row{display:flex;align-items:center;gap:8px}.detail-header h1{font-size:34px;margin:14px 0 7px}.detail-header p{color:#7d8796;margin:0}.detail-header>div:last-child{display:flex;gap:10px}.edit-title{display:flex;gap:8px;margin:14px 0;width:650px}.ai-chat{margin-top:28px;padding:28px}.chat-head{display:flex;gap:13px}.chat-head>span{width:44px;height:44px;border-radius:14px;background:var(--gradient);color:#fff;display:grid;place-items:center;font-size:20px}.chat-head h2,.chat-head p{margin:0}.chat-head p{color:#7b8696;margin-top:5px}.quick-questions{display:flex;gap:9px;margin:20px 0}.quick-questions button{border:1px solid #dce5ee;background:#f8fbfd;padding:9px 12px;border-radius:99px;color:#58738e;cursor:pointer}.chat-messages{background:#f7f9fc;border-radius:15px;padding:16px;display:grid;gap:12px;max-height:330px;overflow:auto;margin-bottom:14px}.chat-messages>div{max-width:82%}.chat-messages .user{margin-left:auto;text-align:right}.chat-messages b{font-size:11px;color:#8190a0}.chat-messages p{margin:4px 0;background:#fff;border-radius:12px;padding:11px 13px;line-height:1.6;font-size:13px}.chat-messages .user p{background:#e8f4ff}.chat-input{display:flex;gap:10px}</style>
+
+<template>
+  <div class="page trip-detail-placeholder">
+    <div class="container">
+      <section class="placeholder-card card">
+        <span class="eyebrow">COMING SOON</span>
+        <h1>行程详情页待完成</h1>
+        <p>当前阶段已支持保存行程、我的行程列表、搜索和删除。详情页还在完善中，暂不开放。</p>
+        <el-button type="primary" @click="router.push('/trips')">返回我的行程</el-button>
+      </section>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.trip-detail-placeholder{display:grid;align-items:center;min-height:calc(100vh - 180px)}
+.placeholder-card{max-width:640px;margin:0 auto;padding:42px;text-align:center}
+.placeholder-card h1{margin:10px 0 12px;color:#172033;font-size:30px}
+.placeholder-card p{margin:0 auto 24px;max-width:460px;color:#64748b;line-height:1.8}
+</style>

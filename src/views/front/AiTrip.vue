@@ -328,6 +328,7 @@ const createOrder=async()=>{
   try{
     await tripApi.save({
       title:plan.value.title,
+      departure:result.value.requirement.departure,
       destination:plan.value.destination,
       days:plan.value.days,
       budget:plan.value.budgetSummary.total,

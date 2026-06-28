@@ -74,6 +74,7 @@ const hasRental=computed(()=>{
 const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')?'出行方式：落地租车':'路线模式：租车自驾'):'城市轻松游')
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
 const currentDay=computed(()=>days.value[currentDayIndex.value])
+const dayOverlayVisible=computed(()=>currentDay.value?.status==='generating')
 const lockedCount=computed(()=>days.value.filter(day=>day.status==='locked').length)
 const progressStyle=computed(()=>({background:`conic-gradient(#10b981 ${Math.round((lockedCount.value/Math.max(days.value.length,1))*360)}deg,#e5eaf0 0deg)`}))
 const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.value.moments.map((moment,index)=>({
@@ -832,6 +833,13 @@ function coordinateForPlace(title:string,destination:string,index:number){
       </section>
 
       <section v-if="step==='DAY_BUILDING'&&!generating&&currentDay" class="day-builder">
+        <div v-if="dayOverlayVisible" class="day-generate-mask">
+          <div>
+            <el-icon><Loading class="is-loading"/></el-icon>
+            <b>正在生成 Day {{ String(currentDay.day).padStart(2,'0') }}</b>
+            <span>正在避开已确认景点，重新规划当天路线...</span>
+          </div>
+        </div>
         <header class="trip-summary builder-card">
           <img :src="coverForDestination(activeRequirement.destination)" alt="trip cover">
           <div class="summary-title">
@@ -1118,8 +1126,53 @@ function coordinateForPlace(title:string,destination:string,index:number){
 }
 
 .day-builder {
+  position: relative;
   display: grid;
   gap: 18px;
+}
+
+.day-generate-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, .72);
+  backdrop-filter: blur(4px);
+}
+
+.day-generate-mask div {
+  min-width: 260px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px 34px;
+  border: 1px solid #e1eaf3;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .14);
+}
+
+.day-generate-mask .el-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #0f9f8f;
+  background: #ecfdf5;
+  font-size: 28px;
+}
+
+.day-generate-mask b {
+  color: #111827;
+  font-size: 18px;
+}
+
+.day-generate-mask span {
+  color: #64748b;
+  font-size: 13px;
 }
 
 .trip-summary {

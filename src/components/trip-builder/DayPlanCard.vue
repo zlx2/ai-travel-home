@@ -79,8 +79,8 @@ const cleanOpeningHours=(value?:string)=>{
       <span>{{ routeHealth.text }}</span>
     </section>
 
-    <section v-if="day.status==='pending'||day.status==='generating'" class="day-empty-state">
-      <b>{{ day.status==='generating' ? '正在生成这一天' : '等待生成' }}</b>
+    <section v-if="day.status==='pending'" class="day-empty-state">
+      <b>等待生成</b>
       <span>{{ day.subtitle }}</span>
     </section>
     <section v-else class="timeline-scroll">

@@ -112,6 +112,16 @@ export const noteApi={
   async addComment(noteId:number,content:string){if(!USE_MOCK)return request.post(`/notes/${noteId}/comments`,{content});await delay();const item={id:Math.max(0,...comments.map(c=>c.id))+1,noteId,userId:1,nickname:'旅行者 Sora',content,createTime:new Date().toLocaleString()};comments.push(item);const note=notes.find(n=>n.id===noteId);if(note)note.commentCount++;persist();return item},
 }
 export const baseApi={async tags(){if(!USE_MOCK)return request.get('/tags');return tags},async destinations(){if(!USE_MOCK)return request.get('/destinations');return destinations}}
+export interface RentalQuotePreviewRequest { requirement:any }
+export interface RentalQuotePreviewResponse { routeMode?:string; rentalCity?:string; citycode?:string; quoteOptions:any[] }
+export const rentalApi={
+  previewQuotes(payload:RentalQuotePreviewRequest){return request.post('/rental/quotes/preview',payload,{suppressError:true}) as Promise<RentalQuotePreviewResponse>},
+  createOrder(payload:any){return request.post('/rental/orders',payload) as Promise<{id:number}>},
+  payOrder(id:number,payload?:{success?:boolean}){return request.post(`/rental/orders/${id}/pay`,payload||{}) as Promise<void>},
+  listMyOrders(){return request.get('/rental/orders/my') as Promise<any[]>},
+  getOrder(id:number){return request.get(`/rental/orders/${id}`) as Promise<any>},
+  cancelOrder(id:number){return request.post(`/rental/orders/${id}/cancel`) as Promise<void>},
+}
 export const userApi={async me(){if(!USE_MOCK)return request.get('/users/me') as Promise<UserInfo>;await delay();return users[0]},async update(value:Partial<UserInfo>){if(!USE_MOCK)return request.put('/users/me',value);await delay();Object.assign(users[0],value);return users[0]},async stats(){if(!USE_MOCK)return request.get('/users/me/stats') as Promise<UserProfileStats>;await delay();const myNotes=notes.filter(n=>n.status===1);return{tripCount:trips.filter(t=>t.status===1).length,noteCount:myNotes.length,likeCount:myNotes.reduce((sum,n)=>sum+(n.likeCount||0),0),favoriteCount:myNotes.reduce((sum,n)=>sum+(n.favoriteCount||0),0)}},sendChangeEmailCode(newEmail:string){return request.post('/users/me/email-code',{newEmail}) as Promise<void>},updateEmail(payload:{newEmail:string;emailCode:string}){return request.put('/users/me/email',payload) as Promise<void>}}
 export interface FileUploadResponse {url:string;objectKey:string;fileName:string;size:number}
 export const fileApi={upload(file:File,bizType='avatar'){const fd=new FormData();fd.append('file',file);return request.post('/files/upload',fd,{params:{bizType}}) as Promise<FileUploadResponse>}}

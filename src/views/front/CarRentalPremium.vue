@@ -1,286 +1,577 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import {
-  ArrowLeft,
-  Calendar,
-  Check,
-  Clock,
-  Headset,
-  Location,
-  Lock,
-  Money,
-  Search,
-  StarFilled,
-  Suitcase,
-  Switch,
-  User,
-  Van,
-} from '@element-plus/icons-vue'
+import { Calendar, Check, Clock, EditPen, Headset, Location, Money, Search, StarFilled, Suitcase, Switch, User, Van } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { rentalApi } from '../../api'
 
-type ViewMode = 'home' | 'results' | 'detail'
-type Car = {
-  id: number
+type Mode = 'home' | 'results' | 'detail'
+type FeeBreakdown = {
+  rentalFeeCent: number
+  baseServiceFeeCent: number
+  vehiclePrepareFeeCent: number
+  oneWayFeeCent: number
+  deliveryFeeCent: number
+  totalPriceCent: number
+  rentalDepositCent: number
+  violationDepositCent: number
+  depositFreeThresholdScore: number
+}
+type RentalQuoteView = {
+  quoteId: string
+  vehicleGroupId: number
+  groupCode: string
+  groupName: string
+  displayName: string
+  vehicleClass: string
+  bodyType?: string
+  energyType: string
+  seatsMin: number
+  seatsMax: number
+  pickupPoiName: string
+  pickupAddress: string
+  returnPoiName: string
+  returnAddress: string
+  pickupMode: string
+  returnMode: string
+  rentalDays: number
+  isOneWay: boolean
+  priceTemplateId: number
+  featureTags?: string
+  availableCount?: number
+  dailyMileageLimitKm?: number
+  extraMileageFeeCent?: number
+  includedServices?: string
+  feeBreakdown: FeeBreakdown
+  priceSnapshot: Record<string, unknown>
+}
+type RentalCarView = {
   name: string
-  brand: string
-  type: string
-  badge: string
-  tone: string
-  price: number
+  image: string
+  label: string
+  labelClass: string
+  desc: string
   score: string
   reviews: number
-  seats: number
-  bags: number
-  energy: string
-  gearbox: string
-  desc: string
-  highlight: string
+  selected?: boolean
+  model: {
+    brand: string
+    series: string
+    seriesFullName: string
+    transmission: string
+    seats: number
+    luggage: number
+    energyType: string
+  }
+  quote: RentalQuoteView
 }
 
-const mode = ref<ViewMode>('home')
-const activeType = ref('全部')
-const activeCarId = ref(4)
-
-const types = ['全部', '经济型', '舒适型', 'SUV', '新能源', '商务型']
-const cars: Car[] = [
-  { id: 1, name: '大众 朗逸', brand: 'Volkswagen', type: '经济型', badge: '经济型', tone: 'silver', price: 168, score: '4.8', reviews: 126, seats: 5, bags: 2, energy: '汽油', gearbox: '自动挡', desc: '经济省油，适合城市通勤和短途自驾', highlight: '城市轻松游首选' },
-  { id: 2, name: '丰田 凯美瑞', brand: 'Toyota', type: '舒适型', badge: '舒适型', tone: 'pearl', price: 268, score: '4.9', reviews: 215, seats: 5, bags: 3, energy: '汽油', gearbox: '自动挡', desc: '座舱安静，长途驾驶更稳更舒适', highlight: '商务与家庭兼顾' },
-  { id: 3, name: '本田 CR-V', brand: 'Honda', type: 'SUV', badge: 'SUV', tone: 'graphite', price: 358, score: '4.8', reviews: 182, seats: 5, bags: 3, energy: '汽油', gearbox: '自动挡', desc: '后备箱空间充足，适合亲子和周边路线', highlight: '空间宽敞' },
-  { id: 4, name: '特斯拉 Model 3', brand: 'Tesla', type: '新能源', badge: '新能源', tone: 'white', price: 358, score: '4.9', reviews: 97, seats: 5, bags: 2, energy: '纯电', gearbox: '自动挡', desc: '智能电动，动力响应快，城市与高速都从容', highlight: '智能电动推荐' },
-  { id: 5, name: '奥迪 Q5L', brand: 'Audi', type: 'SUV', badge: '商务型', tone: 'black', price: 598, score: '4.9', reviews: 88, seats: 5, bags: 3, energy: '汽油', gearbox: '自动挡', desc: '豪华 SUV，适合品质出行与商务接待', highlight: '豪华品质之选' },
+const mode = ref<Mode>('home')
+const heroCar = '/assets/cars/hero-suv.jpg'
+const yuan = (cent: number | undefined) => Math.round((cent || 0) / 100)
+const energyText = (value?: string) => {
+  const text = String(value || '').toUpperCase()
+  if (['FUEL', 'GASOLINE', 'PETROL'].includes(text)) return '汽油'
+  if (['EV', 'ELECTRIC', 'BEV', 'NEW_ENERGY'].includes(text) || text.includes('电')) return '纯电'
+  if (['HYBRID', 'PHEV'].includes(text) || text.includes('混')) return '混动'
+  return value || '不限能源'
+}
+const quoteFee = (daily: number, days = 2, extra: Partial<FeeBreakdown> = {}): FeeBreakdown => {
+  const rentalFeeCent = daily * days * 100
+  const baseServiceFeeCent = extra.baseServiceFeeCent ?? 0
+  const vehiclePrepareFeeCent = extra.vehiclePrepareFeeCent ?? 3000
+  const oneWayFeeCent = extra.oneWayFeeCent ?? 0
+  const deliveryFeeCent = extra.deliveryFeeCent ?? 0
+  const totalPriceCent = extra.totalPriceCent ?? rentalFeeCent + baseServiceFeeCent + vehiclePrepareFeeCent + oneWayFeeCent + deliveryFeeCent
+  return {
+    rentalFeeCent,
+    baseServiceFeeCent,
+    vehiclePrepareFeeCent,
+    oneWayFeeCent,
+    deliveryFeeCent,
+    totalPriceCent,
+    rentalDepositCent: extra.rentalDepositCent ?? 0,
+    violationDepositCent: extra.violationDepositCent ?? 200000,
+    depositFreeThresholdScore: extra.depositFreeThresholdScore ?? 600,
+  }
+}
+const makeQuote = (id: string, groupId: number, groupCode: string, groupName: string, displayName: string, vehicleClass: string, energyType: string, daily: number, feeExtra: Partial<FeeBreakdown> = {}): RentalQuoteView => {
+  const feeBreakdown = quoteFee(daily, 2, feeExtra)
+  return {
+    quoteId: id,
+    vehicleGroupId: groupId,
+    groupCode,
+    groupName,
+    displayName,
+    vehicleClass,
+    energyType,
+    seatsMin: 5,
+    seatsMax: 5,
+    pickupPoiName: '上海虹桥机场 T2 航站楼',
+    pickupAddress: '上海市闵行区申达一路',
+    returnPoiName: '杭州萧山国际机场',
+    returnAddress: '杭州市萧山区空港大道',
+    pickupMode: 'POI',
+    returnMode: 'POI',
+    rentalDays: 2,
+    isOneWay: true,
+    priceTemplateId: groupId,
+    feeBreakdown,
+    priceSnapshot: { source: 'rental_price_template', groupCode, rentalDays: 2, feeBreakdown },
+  }
+}
+const seedCars: RentalCarView[] = [
+  { name: '大众 朗逸', image: '/assets/cars/lavida.jpg', label: '经济型', labelClass: 'green', desc: '经济省油｜适合城市出行', score: '4.8', reviews: 126, model: { brand: '大众', series: '朗逸', seriesFullName: '大众 朗逸', transmission: '自动挡', seats: 5, luggage: 2, energyType: '汽油' }, quote: makeQuote('Q-1-1', 1, 'ECONOMY_SEDAN', '经济型轿车', '大众朗逸或同级', '经济型', '汽油', 168, { vehiclePrepareFeeCent: 0 }) },
+  { name: '丰田 凯美瑞', image: '/assets/cars/camry.jpg', label: '舒适型', labelClass: 'green', desc: '舒适稳重｜商务出行优选', score: '4.9', reviews: 215, model: { brand: '丰田', series: '凯美瑞', seriesFullName: '丰田 凯美瑞', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' }, quote: makeQuote('Q-2-2', 2, 'COMFORT_SEDAN', '舒适型轿车', '丰田凯美瑞或同级', '舒适型', '汽油', 268, { vehiclePrepareFeeCent: 0 }) },
+  { name: '本田 CR-V', image: '/assets/cars/crv.jpg', label: 'SUV', labelClass: 'purple', desc: '空间宽敞｜家庭出行优选', score: '4.8', reviews: 182, model: { brand: '本田', series: 'CR-V', seriesFullName: '本田 CR-V', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' }, quote: makeQuote('Q-3-3', 3, 'SUV', 'SUV', '本田 CR-V 或同级', 'SUV', '汽油', 358, { vehiclePrepareFeeCent: 0 }) },
+  { name: '特斯拉 Model 3', image: '/assets/cars/camry.jpg', label: '新能源', labelClass: 'green', desc: '智能电动｜城市高速都从容', score: '4.9', reviews: 97, selected: true, model: { brand: '特斯拉', series: 'Model 3', seriesFullName: '特斯拉 Model 3', transmission: '自动挡', seats: 5, luggage: 2, energyType: '纯电' }, quote: makeQuote('Q-4-4', 4, 'EV_SEDAN', '新能源轿车', '特斯拉 Model 3 或同级', '新能源', '纯电', 358, { baseServiceFeeCent: 0, vehiclePrepareFeeCent: 3000, oneWayFeeCent: 12000, totalPriceCent: 86600 }) },
 ]
-
-const filteredCars = computed(() => activeType.value === '全部' ? cars : cars.filter(car => car.type === activeType.value || car.badge === activeType.value))
-const activeCar = computed(() => cars.find(car => car.id === activeCarId.value) || cars[0])
-const rentalDays = 2
-const protectionFee = 120
-const serviceFee = 30
-const totalPrice = computed(() => activeCar.value.price * rentalDays + protectionFee + serviceFee)
-
-const switchView = (next: ViewMode, id?: number) => {
-  if (id) activeCarId.value = id
-  mode.value = next
-  setTimeout(() => document.querySelector(`.${next}-view`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 20)
+const cars = ref<RentalCarView[]>(seedCars)
+const activeCategory = ref('全部')
+const sortMode = ref<'recommend' | 'priceAsc' | 'priceDesc' | 'scoreDesc'>('recommend')
+const searchForm = ref({
+  pickupCity: '上海',
+  returnCity: '杭州',
+  pickupLocation: '上海虹桥机场 T2 航站楼',
+  returnLocation: '杭州萧山国际机场',
+  pickupDate: '2025-06-01',
+  pickupTime: '10:00',
+  returnDate: '2025-06-03',
+  returnTime: '10:00',
+  peopleCount: 2,
+  vehiclePreference: '不限车型',
+  isOneWay: true,
+})
+const protectionPackages = [
+  { code: 'BASE', name: '基础保险', dailyFeeCent: 0 },
+  { code: 'CAREFREE', name: '安心保障套餐', dailyFeeCent: 6000 },
+  { code: 'PREMIUM', name: '尊享无忧套餐', dailyFeeCent: 12000 },
+]
+const selectedProtectionCode = ref('CAREFREE')
+const selectedProtection = computed(() => protectionPackages.find(item => item.code === selectedProtectionCode.value) || protectionPackages[0])
+const protectionFeeCent = computed(() => selectedProtection.value.dailyFeeCent * selectedQuote.value.rentalDays)
+const payableTotalCent = computed(() => selectedFee.value.totalPriceCent + protectionFeeCent.value)
+const bookingLoading = ref(false)
+const latestOrderId = ref<number | null>(null)
+const dateLabel = (date: string, time: string) => `${date} ${time}`
+const daysBetween = () => {
+  const start = new Date(`${searchForm.value.pickupDate}T00:00:00`)
+  const end = new Date(`${searchForm.value.returnDate}T00:00:00`)
+  const days = Math.round((end.getTime() - start.getTime()) / 86400000)
+  return Math.max(1, days || 1)
+}
+const quoteToCar = (quote: any, index: number): RentalCarView => {
+  const fallback = seedCars[index % seedCars.length]
+  const fee = quote.feeBreakdown || fallback.quote.feeBreakdown
+  const modelName = quote.seriesFullName || quote.displayName || quote.groupName || fallback.name
+  const featureTags = String(quote.featureTags || quote.travelTags || '')
+    .split(/[,，]/)
+    .map(item => item.trim())
+    .filter(Boolean)
+  return {
+    name: modelName,
+    image: quote.imageUrl || fallback.image,
+    label: quote.vehicleClass || quote.groupName || fallback.label,
+    labelClass: quote.groupCode?.includes('SUV') ? 'purple' : 'green',
+    desc: quote.summary || quote.description || fallback.desc,
+    score: fallback.score,
+    reviews: fallback.reviews,
+    selected: index === 0,
+    model: {
+      brand: quote.brand || fallback.model.brand,
+      series: quote.series || modelName,
+      seriesFullName: modelName,
+      transmission: quote.transmission || fallback.model.transmission,
+      seats: quote.seats || quote.seatsMax || fallback.model.seats,
+      luggage: Number(String(quote.recommendedLuggage || '').match(/\d+/)?.[0] || fallback.model.luggage),
+      energyType: energyText(quote.energyType || fallback.model.energyType),
+    },
+    quote: {
+      ...fallback.quote,
+      ...quote,
+      feeBreakdown: fee,
+      featureTags: featureTags.join(',') || quote.featureTags || fallback.quote.featureTags,
+      priceSnapshot: quote.priceSnapshot || fallback.quote.priceSnapshot,
+    },
+  }
+}
+const selectedCar = computed(() => cars.value.find(item => item.selected) || cars.value[0])
+const selectedQuote = computed(() => selectedCar.value.quote)
+const selectedFee = computed(() => selectedQuote.value.feeBreakdown)
+const dailyPrice = (car: RentalCarView) => Math.round(yuan(car.quote.feeBreakdown.rentalFeeCent) / car.quote.rentalDays)
+const matchCategory = (car: RentalCarView, category: string) => {
+  if (category === '全部') return true
+  if (category === '新能源') return car.model.energyType.includes('电') || car.quote.groupCode?.includes('EV')
+  if (category === 'SUV') return car.label.includes('SUV') || car.quote.groupCode?.includes('SUV') || car.quote.bodyType?.includes('SUV')
+  return car.label.includes(category) || car.quote.groupName?.includes(category) || car.quote.vehicleClass?.includes(category)
+}
+const displayedCars = computed(() => {
+  const list = cars.value.filter(car => matchCategory(car, activeCategory.value))
+  if (sortMode.value === 'priceAsc') list.sort((a, b) => dailyPrice(a) - dailyPrice(b))
+  if (sortMode.value === 'priceDesc') list.sort((a, b) => dailyPrice(b) - dailyPrice(a))
+  if (sortMode.value === 'scoreDesc') list.sort((a, b) => Number(b.score) - Number(a.score))
+  return list
+})
+const expandedQuoteId = ref<string | null>(null)
+const togglePriceDetail = (quoteId: string) => {
+  expandedQuoteId.value = expandedQuoteId.value === quoteId ? null : quoteId
+}
+const orderPreview = computed(() => ({
+  orderStatus: 'pending',
+  paymentStatus: 'unpaid',
+  rentalCity: searchForm.value.pickupCity,
+  tripDays: selectedQuote.value.rentalDays,
+  peopleCount: searchForm.value.peopleCount,
+  mileageText: selectedQuote.value.dailyMileageLimitKm ? `约 ${selectedQuote.value.dailyMileageLimitKm * selectedQuote.value.rentalDays} 公里` : '约 200 公里',
+  pickupTime: dateLabel(searchForm.value.pickupDate, searchForm.value.pickupTime),
+  returnTime: dateLabel(searchForm.value.returnDate, searchForm.value.returnTime),
+  pickupSnapshot: {
+    poiName: selectedQuote.value.pickupPoiName,
+    address: selectedQuote.value.pickupAddress,
+    mode: selectedQuote.value.pickupMode,
+  },
+  returnSnapshot: {
+    poiName: selectedQuote.value.returnPoiName,
+    address: selectedQuote.value.returnAddress,
+    mode: selectedQuote.value.returnMode,
+  },
+}))
+const benefits = [
+  { icon: Money, title: '价格透明', text: '明码标价，无隐形消费' },
+  { icon: Check, title: '灵活取消', text: '免费取消，行程更灵活' },
+  { icon: Location, title: '多网点取还', text: '全国覆盖，随心取还' },
+  { icon: Headset, title: '24h 专属服务', text: '全天候在线支持' },
+]
+const quoteLoading = ref(false)
+const quoteRequirement = () => ({
+  departure: searchForm.value.pickupCity,
+  destination: searchForm.value.returnCity,
+  days: daysBetween(),
+  peopleCount: searchForm.value.peopleCount,
+  budget: 2000,
+  budgetType: 'TOTAL',
+  travelDate: searchForm.value.pickupDate,
+  routeMode: 'LANDING_RENTAL_TRIP',
+  transportMode: 'RENTAL_CAR',
+  rentalIntent: 'USER_REQUIRED',
+  preferences: ['租车出行', searchForm.value.vehiclePreference],
+  rentalRequirement: {
+    needRental: true,
+    rentalStartCity: searchForm.value.pickupCity,
+    rentalEndCity: searchForm.value.returnCity,
+    pickupMode: 'AIRPORT',
+    returnMode: 'AIRPORT',
+    pickupCity: searchForm.value.pickupCity,
+    returnCity: searchForm.value.returnCity,
+    vehiclePreference: searchForm.value.vehiclePreference,
+    rentalDays: daysBetween(),
+    deliveryRequired: false,
+    isOneWay: searchForm.value.isOneWay,
+  },
+})
+const loadQuotes = async () => {
+  quoteLoading.value = true
+  try {
+    const data = await rentalApi.previewQuotes({ requirement: quoteRequirement() })
+    if (data.quoteOptions?.length) {
+      cars.value = data.quoteOptions.map(quoteToCar)
+      activeCategory.value = '全部'
+      sortMode.value = 'recommend'
+    }
+  } catch {
+    cars.value = seedCars
+  } finally {
+    quoteLoading.value = false
+  }
+}
+const goResults = async () => {
+  await loadQuotes()
+  mode.value = 'results'
+  setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20)
+}
+const goDetail = (car?: RentalCarView) => {
+  if (car) {
+    cars.value = cars.value.map(item => ({ ...item, selected: item.quote.quoteId === car.quote.quoteId }))
+  }
+  mode.value = 'detail'
+  setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20)
+}
+const createRentalTripPlan = () => ({
+  title: `${searchForm.value.pickupCity}租车出行`,
+  destination: searchForm.value.returnCity,
+  days: selectedQuote.value.rentalDays,
+  summary: `${selectedCar.value.name} ${selectedQuote.value.rentalDays}天租车订单`,
+  dailyPlans: [],
+  budgetSummary: { transportCost: yuan(payableTotalCent.value), totalEstimatedCost: yuan(payableTotalCent.value) },
+  tips: ['取车前请携带身份证、驾驶证和信用卡。'],
+})
+const bookNow = async () => {
+  bookingLoading.value = true
+  try {
+    const result = await rentalApi.createOrder({
+      requirement: quoteRequirement(),
+      tripPlan: createRentalTripPlan(),
+      selectedQuote: selectedQuote.value,
+      protectionPackageCode: selectedProtection.value.code,
+      protectionPackageName: selectedProtection.value.name,
+      protectionFeeCent: protectionFeeCent.value,
+      contactName: '旅行家',
+      contactPhone: '13800000000',
+      remark: `${selectedCar.value.name} 租车预订`,
+    })
+    latestOrderId.value = result.id
+    ElMessage.success(`预订成功，订单ID：${result.id}`)
+  } finally {
+    bookingLoading.value = false
+  }
 }
 </script>
 
 <template>
   <div class="rental-page">
-    <section v-if="mode === 'home'" class="hero-section home-view">
-      <div class="hero-bg"></div>
-      <div class="container hero-grid">
-        <div class="hero-copy">
-          <span class="eyebrow">PLANGO RENTAL</span>
-          <h1>轻松租车，自在出行</h1>
-          <p>覆盖机场、高铁站与城市门店，透明报价、灵活取还，把租车体验做得像订酒店一样清楚。</p>
-          <div class="hero-metrics">
-            <article><strong>200+</strong><span>覆盖城市</span></article>
-            <article><strong>2000+</strong><span>精选网点</span></article>
-            <article><strong>24h</strong><span>客服支持</span></article>
-          </div>
-        </div>
-        <div class="hero-stage">
-          <div class="flight-mark"></div>
-          <div class="city-line"></div>
-          <div class="vehicle-render vehicle-blue vehicle-xl"><i></i></div>
-          <div class="road-line"></div>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="mode === 'home'" class="container search-panel">
-      <div class="search-top">
-        <div class="search-tabs"><button class="active">国内租车</button><button>海外租车</button></div>
-        <label class="checkline"><input type="checkbox"> 异地还车</label>
-      </div>
-      <div class="search-grid">
-        <label><span>取车城市</span><b><el-icon><Location /></el-icon>上海</b></label>
-        <label><span>取车地点</span><b><el-icon><Location /></el-icon>虹桥机场 T2 航站楼</b></label>
-        <label><span>还车地点</span><b><el-icon><Location /></el-icon>与取车地点相同</b></label>
-        <label><span>取车时间</span><b><el-icon><Calendar /></el-icon>2025-06-01 周日</b></label>
-        <label><span>还车时间</span><b><el-icon><Calendar /></el-icon>2025-06-03 周二</b></label>
-        <label><span>乘车人数</span><b><el-icon><User /></el-icon>2 人</b></label>
-        <label><span>车型类型</span><b><el-icon><Van /></el-icon>不限车型</b></label>
-        <button class="primary-action" @click="switchView('results')"><el-icon><Search /></el-icon>搜索车辆</button>
-      </div>
-    </section>
-
-    <section v-if="mode === 'home'" class="container landing-content">
-      <div class="promise-row">
-        <article><el-icon><Money /></el-icon><div><b>价格透明</b><span>明码标价，无隐形消费</span></div></article>
-        <article><el-icon><Check /></el-icon><div><b>灵活取消</b><span>取车前 24 小时可免费取消</span></div></article>
-        <article><el-icon><Location /></el-icon><div><b>多网点取还</b><span>机场、高铁站、商圈覆盖</span></div></article>
-        <article><el-icon><Headset /></el-icon><div><b>专属服务</b><span>全天候在线协助</span></div></article>
-      </div>
-
-      <div class="section-head">
-        <div><h2>热门车型推荐</h2><p>先用静态数据打磨体验，后续可直接对接真实库存。</p></div>
-        <button @click="switchView('results')">查看全部车型</button>
-      </div>
-      <div class="featured-grid">
-        <article v-for="car in cars.slice(0, 4)" :key="car.id" class="featured-card" @click="switchView('detail', car.id)">
-          <div class="featured-visual" :class="`tone-${car.tone}`"><div class="vehicle-render"><i></i></div></div>
-          <div class="featured-info">
-            <span>{{ car.badge }}</span>
-            <h3>{{ car.name }}</h3>
-            <p>{{ car.desc }}</p>
-            <div><b>¥{{ car.price }}</b><small>/天起</small></div>
-          </div>
-        </article>
-      </div>
-
-      <div class="process-band">
-        <h2>为什么选择 PlanGo</h2>
-        <div class="process-steps">
-          <article><span>01</span><b>全国覆盖</b><small>200+ 城市 · 2000+ 网点</small></article>
-          <i></i>
-          <article><span>02</span><b>快速确认</b><small>静态流程清晰，后续可接库存</small></article>
-          <i></i>
-          <article><span>03</span><b>优质车源</b><small>车型、保障、价格统一展示</small></article>
-          <i></i>
-          <article><span>04</span><b>安心保障</b><small>保险、救援、取消规则前置</small></article>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="mode === 'results'" class="container results-view page-view">
-      <div class="summary-card">
-        <article><span>取车地点</span><b>上海虹桥机场 T2 航站楼</b></article>
-        <article><span>还车地点</span><b>杭州萧山国际机场</b></article>
-        <article><span>取车时间</span><b>2025-06-01 周日 10:00</b></article>
-        <article><span>还车时间</span><b>2025-06-03 周二 10:00</b></article>
-        <article><span>行程时长</span><b>2 天</b></article>
-        <article><span>乘车人数</span><b>2 人</b></article>
-        <button @click="switchView('home')">修改搜索</button>
-      </div>
-
-      <div class="toolbar-row">
-        <div class="category-tabs">
-          <button v-for="type in types" :key="type" :class="{ active: activeType === type }" @click="activeType = type">{{ type }}</button>
-        </div>
-        <div class="sort-tabs"><button class="active">推荐排序</button><button>价格从低到高</button><button>评分最高</button><button>更多筛选</button></div>
-      </div>
-
-      <div class="results-layout">
-        <div class="quote-list">
-          <article v-for="car in filteredCars" :key="car.id" class="quote-card" :class="{ selected: activeCarId === car.id }" @click="activeCarId = car.id">
-            <span class="quote-badge">{{ car.badge }}</span>
-            <div class="quote-visual" :class="`tone-${car.tone}`"><div class="vehicle-render"><i></i></div></div>
-            <div class="quote-main">
-              <h3>{{ car.name }}</h3>
-              <p>{{ car.highlight }} · {{ car.desc }}</p>
-              <div class="spec-line">
-                <span><el-icon><User /></el-icon>{{ car.seats }} 座</span>
-                <span><el-icon><Suitcase /></el-icon>{{ car.bags }} 行李箱</span>
-                <span><el-icon><Switch /></el-icon>{{ car.gearbox }}</span>
-                <span>{{ car.energy }}</span>
-              </div>
-              <div class="rating-line"><el-icon><StarFilled /></el-icon>{{ car.score }} 分 <em>{{ car.reviews }} 条评价</em></div>
-              <div class="service-tags"><span>免费取消</span><span>基础保险</span><span>24h 道路救援</span></div>
+    <template v-if="mode === 'home'">
+      <section class="home-hero">
+        <div class="home-hero-inner">
+          <div class="hero-copy">
+            <h1>轻松租车，自在出行</h1>
+            <p>多样车型，灵活取还，开启每一段美好旅程</p>
+            <div class="hero-promises">
+              <article><el-icon><Money /></el-icon><b>价格透明</b><span>无隐藏费用</span></article>
+              <article><el-icon><Check /></el-icon><b>免费取消</b><span>灵活无忧</span></article>
+              <article><el-icon><Headset /></el-icon><b>24h 专属服务</b><span>全天候支持</span></article>
             </div>
-            <div class="quote-price">
-              <small>单价低至</small>
-              <strong>¥{{ car.price }}</strong><span>/天起</span>
-              <button @click.stop="switchView('detail', car.id)">查看详情</button>
-              <a>价格明细</a>
-            </div>
-          </article>
+          </div>
+          <div class="hero-art">
+            <span class="plane"></span>
+            <div class="skyline"></div>
+            <img :src="heroCar" alt="蓝色 SUV">
+          </div>
         </div>
+      </section>
 
-        <aside class="trip-aside">
-          <div class="map-panel">
-            <div class="map-grid"></div>
-            <b class="pin-start">上海虹桥机场 T2 航站楼</b>
-            <i></i>
-            <b class="pin-end">杭州萧山国际机场</b>
+      <main class="home-main">
+        <section class="search-card">
+          <div class="tabs">
+            <button class="active">国内租车</button>
+            <button>海外租车</button>
+            <label><input v-model="searchForm.isOneWay" type="checkbox"> 异地还车 <small>i</small></label>
           </div>
-          <div class="aside-card">
-            <h3>行程概览</h3>
-            <p><span>取车</span><b>2025-06-01 周日 10:00<br>上海虹桥机场 T2 航站楼</b></p>
-            <p><span>还车</span><b>2025-06-03 周二 10:00<br>杭州萧山国际机场</b></p>
-            <p><span>行程时长</span><b>2 天</b></p>
-            <p><span>预计里程</span><b>约 200 公里</b></p>
+          <div class="form-grid">
+            <label class="field city"><span>取车城市</span><b><el-icon><Location /></el-icon><input v-model="searchForm.pickupCity"></b></label>
+            <label class="field pickup"><span>取车地点</span><b><el-icon><Location /></el-icon><input v-model="searchForm.pickupLocation"></b></label>
+            <label class="field return"><span>还车地点</span><b><el-icon><Location /></el-icon><input v-model="searchForm.returnLocation" :disabled="!searchForm.isOneWay"></b></label>
+            <label class="field date"><span>取车日期</span><b><el-icon><Calendar /></el-icon><input v-model="searchForm.pickupDate" type="date"></b></label>
+            <label class="field short"><span>取车时间</span><b><input v-model="searchForm.pickupTime" type="time"></b></label>
+            <label class="field date"><span>还车日期</span><b><el-icon><Calendar /></el-icon><input v-model="searchForm.returnDate" type="date"></b></label>
+            <label class="field short"><span>还车时间</span><b><input v-model="searchForm.returnTime" type="time"></b></label>
+            <label class="field mini"><span>乘车人数</span><b><el-icon><User /></el-icon><input v-model.number="searchForm.peopleCount" min="1" max="9" type="number"></b></label>
+            <label class="field mini"><span>车型类型</span><b><el-icon><Van /></el-icon><select v-model="searchForm.vehiclePreference"><option>不限车型</option><option>经济型</option><option>舒适型</option><option>SUV</option><option>新能源</option><option>商务型</option></select></b></label>
+            <button class="search-btn" :disabled="quoteLoading" @click="goResults"><el-icon><Search /></el-icon>{{ quoteLoading ? '搜索中...' : '搜索车辆' }}</button>
           </div>
-          <div class="aside-card include-card">
-            <h3>费用包含</h3>
-            <div><span><el-icon><Lock /></el-icon>基础保险</span><span><el-icon><Headset /></el-icon>道路救援</span><span><el-icon><Van /></el-icon>车辆清洁</span><span><el-icon><Clock /></el-icon>不限里程</span></div>
-          </div>
-        </aside>
-      </div>
-    </section>
+        </section>
 
-    <section v-if="mode === 'detail'" class="container detail-view page-view">
-      <button class="back-button" @click="switchView('results')"><el-icon><ArrowLeft /></el-icon>返回搜索结果</button>
-      <div class="detail-layout">
-        <main class="detail-content">
-          <section class="detail-hero-card">
-            <div class="detail-copy">
-              <span>{{ activeCar.badge }}</span>
-              <h2>{{ activeCar.name }}</h2>
-              <p>{{ activeCar.desc }} · 自动驾驶辅助 · {{ activeCar.highlight }}</p>
-              <b><el-icon><StarFilled /></el-icon>{{ activeCar.score }} 分　980+ 评价</b>
-              <div class="detail-specs">
-                <span><el-icon><User /></el-icon>{{ activeCar.seats }} 座</span>
-                <span><el-icon><Suitcase /></el-icon>{{ activeCar.bags }} 行李箱</span>
-                <span>{{ activeCar.energy }}</span>
-                <span>{{ activeCar.gearbox }}</span>
+        <section class="benefit-row">
+          <article v-for="item in benefits" :key="item.title"><el-icon><component :is="item.icon" /></el-icon><div><b>{{ item.title }}</b><span>{{ item.text }}</span></div></article>
+        </section>
+
+        <section class="cars-section">
+          <h2>热门车型推荐</h2>
+          <div class="car-grid">
+            <article v-for="car in cars" :key="car.name" class="home-car">
+              <img :src="car.image" :alt="car.name">
+              <div><h3>{{ car.name }}</h3><p><span>{{ car.model.transmission }}</span><span>{{ car.model.seats }} 座</span><span>{{ car.model.energyType }}</span></p><small>{{ car.desc }}</small><strong>¥{{ dailyPrice(car) }} <em>/天起</em></strong></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="why-section">
+          <h2>为什么选择 PlanGo</h2>
+          <div class="why-flow">
+            <article><i></i><b>全国覆盖</b><span>200+ 城市 · 2000+ 网点</span></article><em></em>
+            <article><i></i><b>易预订</b><span>快速预订 · 即时确认</span></article><em></em>
+            <article><i></i><b>优质车源</b><span>严选车辆 · 安全可靠</span></article><em></em>
+            <article><i></i><b>安心保障</b><span>多重保障 · 行程无忧</span></article>
+          </div>
+        </section>
+      </main>
+    </template>
+
+    <template v-else-if="mode === 'results'">
+      <main class="results-main">
+        <section class="summary-bar">
+          <article><span>取车地点</span><b><el-icon><Location /></el-icon>{{ searchForm.pickupLocation }}</b></article>
+          <article><span>还车地点</span><b><el-icon><Location /></el-icon>{{ searchForm.returnLocation }}</b></article>
+          <article><span>取车时间</span><b><el-icon><Calendar /></el-icon>{{ orderPreview.pickupTime }}</b></article>
+          <article><span>还车时间</span><b><el-icon><Calendar /></el-icon>{{ orderPreview.returnTime }}</b></article>
+          <article><span>行程时长</span><b><el-icon><Clock /></el-icon>{{ orderPreview.tripDays }} 天</b></article>
+          <article><span>乘车人数</span><b><el-icon><User /></el-icon>{{ orderPreview.peopleCount }} 人</b></article>
+          <button @click="mode = 'home'"><el-icon><EditPen /></el-icon>修改搜索</button>
+        </section>
+
+        <section class="results-layout">
+          <div class="results-left">
+            <div class="category-tabs">
+              <button v-for="item in ['全部','经济型','舒适型','SUV','新能源','商务型']" :key="item" :class="{ active: activeCategory === item }" @click="activeCategory = item">{{ item }}</button>
+            </div>
+            <div class="sort-row">
+              <button :class="{ active: sortMode === 'recommend' }" @click="sortMode = 'recommend'">☆ 推荐排序</button><button :class="{ active: sortMode === 'priceAsc' }" @click="sortMode = 'priceAsc'">价格从低到高</button><button :class="{ active: sortMode === 'priceDesc' }" @click="sortMode = 'priceDesc'">价格从高到低</button><button :class="{ active: sortMode === 'scoreDesc' }" @click="sortMode = 'scoreDesc'">评分最高</button><button>☷ 更多筛选⌄</button>
+              <span>共 {{ displayedCars.length }} 款车型</span>
+            </div>
+            <div class="result-list">
+              <article v-for="car in displayedCars" :key="car.quote.quoteId" class="result-card" :class="{ selected: car.selected }">
+                <div class="choose-dot" v-if="car.selected"><el-icon><Check /></el-icon></div>
+                <span class="car-label" :class="car.labelClass">{{ car.label }}</span>
+                <span class="recommend" v-if="car.selected">推荐优选</span>
+                <img :src="car.image" :alt="car.name">
+                <div class="car-info">
+                  <h2>{{ car.name }}</h2>
+                  <div class="specs">
+                    <span><el-icon><User /></el-icon>{{ car.model.seats }} 座</span>
+                    <span><el-icon><Suitcase /></el-icon>{{ car.model.luggage }} 行李箱</span>
+                    <span><el-icon><Switch /></el-icon>{{ car.model.transmission }}</span>
+                    <span><el-icon><Van /></el-icon>{{ car.model.energyType }}</span>
+                  </div>
+                  <p><el-icon><StarFilled /></el-icon><b>{{ car.score }}分</b><em>{{ car.reviews }} 条评价</em></p>
+                  <div class="service-tags"><span v-for="service in (car.quote.includedServices || '免费取消,基础保险,24h 道路救援').split(/[,，]/).filter(Boolean).slice(0,3)" :key="service">{{ service }}</span></div>
+                </div>
+                <div class="price-box">
+                  <small>{{ car.selected ? '套餐价' : '单价低至' }}</small>
+                  <strong>¥{{ car.selected ? yuan(car.quote.feeBreakdown.totalPriceCent) : dailyPrice(car) }}</strong><span>/{{ car.selected ? `${car.quote.rentalDays}天起` : '天起' }}</span>
+                  <button @click="goDetail(car)">查看详情</button>
+                  <a role="button" @click.stop="togglePriceDetail(car.quote.quoteId)">价格明细{{ expandedQuoteId === car.quote.quoteId ? '⌃' : '⌄' }}</a>
+                </div>
+                <div v-if="expandedQuoteId === car.quote.quoteId" class="inline-fee-detail">
+                  <p><span>车辆租金（{{ car.quote.rentalDays }}天）</span><b>¥{{ yuan(car.quote.feeBreakdown.rentalFeeCent) }}</b></p>
+                  <p><span>基础服务费</span><b>¥{{ yuan(car.quote.feeBreakdown.baseServiceFeeCent) }}</b></p>
+                  <p><span>车辆整备费</span><b>¥{{ yuan(car.quote.feeBreakdown.vehiclePrepareFeeCent) }}</b></p>
+                  <p><span>异地还车费</span><b>¥{{ yuan(car.quote.feeBreakdown.oneWayFeeCent) }}</b></p>
+                  <p><span>送车上门费</span><b>¥{{ yuan(car.quote.feeBreakdown.deliveryFeeCent) }}</b></p>
+                  <p><span>租车押金</span><b>{{ car.quote.feeBreakdown.rentalDepositCent ? `¥${yuan(car.quote.feeBreakdown.rentalDepositCent)}` : '可免押' }}</b></p>
+                  <p><span>违章押金</span><b>¥{{ yuan(car.quote.feeBreakdown.violationDepositCent) }}</b></p>
+                  <strong><span>预估总价</span><b>¥{{ yuan(car.quote.feeBreakdown.totalPriceCent) }}</b></strong>
+                  <em>免押门槛：{{ car.quote.feeBreakdown.depositFreeThresholdScore }} 分 · 价格以下单前重新校验为准</em>
+                </div>
+              </article>
+            </div>
+            <p class="result-note"><el-icon><Check /></el-icon>所有车型均提供免费取消保障，行程更安心</p>
+          </div>
+
+          <aside class="results-side">
+            <div class="map-card">
+              <div class="route-map">
+                <b class="start">上海虹桥机场 T2 航站楼</b>
+                <b class="end">杭州萧山国际机场</b>
+                <i></i>
               </div>
             </div>
-            <div class="detail-stage" :class="`tone-${activeCar.tone}`"><div class="city-line"></div><div class="vehicle-render vehicle-xl"><i></i></div></div>
-          </section>
+            <div class="side-card overview">
+              <h3>行程概览</h3>
+              <div class="timeline"><p><i></i><span>取车</span><b>{{ orderPreview.pickupTime }}<br>{{ orderPreview.pickupSnapshot.poiName }}</b></p><p><i></i><span>还车</span><b>{{ orderPreview.returnTime }}<br>{{ orderPreview.returnSnapshot.poiName }}</b></p></div>
+              <p><span>行程时长</span><b>{{ orderPreview.tripDays }} 天</b></p><p><span>乘车人数</span><b>{{ orderPreview.peopleCount }} 人</b></p><p><span>预计里程</span><b>{{ orderPreview.mileageText }}</b></p>
+            </div>
+            <div class="side-card include">
+              <h3>费用包含</h3>
+              <div class="include-grid">
+                <article><el-icon><Check /></el-icon><b>基础保险</b><span>车辆损失险</span></article>
+                <article><el-icon><Headset /></el-icon><b>24h 道路救援</b><span>全天候支持</span></article>
+                <article><el-icon><Van /></el-icon><b>车辆清洁</b><span>整车消毒清洁</span></article>
+                <article><el-icon><Switch /></el-icon><b>不限里程</b><span>畅行无忧</span></article>
+              </div>
+              <footer><el-icon><Check /></el-icon>安心无忧出行 · 如遇问题可联系客服</footer>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </template>
 
-          <div class="gallery-row">
-            <span v-for="item in ['外观', '侧面', '尾部', '中控', '驾驶舱', '+6']" :key="item" :class="{ active: item === '外观' }"><div class="vehicle-render vehicle-thumb"><i></i></div><b>{{ item }}</b></span>
+    <template v-else>
+      <main class="detail-main">
+        <button class="back-link" @click="mode = 'results'">‹　返回搜索结果</button>
+        <section class="detail-layout">
+          <div class="detail-left">
+            <section class="vehicle-hero-card">
+              <button class="favorite">♡ 收藏</button>
+              <div class="vehicle-copy">
+                <span>{{ selectedCar.label }}</span>
+                <h1>{{ selectedCar.name }}</h1>
+                <p>{{ selectedCar.desc }}</p>
+                <div class="rating"><el-icon><StarFilled /></el-icon><b>4.8 分</b><em>980+ 评价</em></div>
+                <div class="vehicle-specs">
+                  <span><el-icon><User /></el-icon>{{ selectedCar.model.seats }} 座</span>
+                  <span><el-icon><Suitcase /></el-icon>{{ selectedCar.model.luggage }} 行李箱</span>
+                  <span><el-icon><Switch /></el-icon>{{ selectedCar.model.energyType }}</span>
+                  <span><el-icon><Van /></el-icon>{{ selectedCar.model.transmission }}</span>
+                </div>
+              </div>
+              <div class="vehicle-stage">
+                <div class="city-bg"></div>
+                <img :src="selectedCar.image" :alt="selectedCar.name">
+              </div>
+            </section>
+
+            <section class="thumb-row">
+              <button class="active"><img src="/assets/cars/camry.jpg" alt=""></button>
+              <button><img src="/assets/cars/lavida.jpg" alt=""></button>
+              <button><img src="/assets/cars/crv.jpg" alt=""></button>
+              <button><img src="/assets/cars/audi-a6l.jpg" alt=""></button>
+              <button><img src="/assets/cars/hero-suv.jpg" alt=""></button>
+              <button class="more"><span>+6</span></button>
+            </section>
+
+            <section class="feature-strip">
+              <article><i>✦</i><b>超长续航</b><span>554km CLTC</span></article>
+              <article><i>↯</i><b>智能驾驶辅助</b><span>Autopilot</span></article>
+              <article><i>▣</i><b>大屏交互</b><span>15 英寸中控屏</span></article>
+              <article><i>ϟ</i><b>极速充电</b><span>超充网络</span></article>
+            </section>
+
+            <section class="plan-section">
+              <h2>租车方案</h2>
+              <div class="plan-grid">
+                <article :class="{ picked: selectedProtectionCode === 'BASE' }" @click="selectedProtectionCode = 'BASE'"><h3>基础保险 <em>已包含</em></h3><p>✓ 基础险（车辆损失险）</p><p>✓ 第三者责任险（额度最高 300 万）</p><p>✓ 7×24 小时客服支持</p><a>保障详情 ›</a></article>
+                <article :class="{ picked: selectedProtectionCode === 'CAREFREE' }" @click="selectedProtectionCode = 'CAREFREE'"><h3>安心保障套餐 <em>推荐</em><strong>¥60/天</strong></h3><p>✓ 基础险（车辆损失险）</p><p>✓ 车辆损失险</p><p>✓ 第三者责任险（50万）</p><p>✓ 免费道路救援</p><a>保障详情 ›</a></article>
+                <article :class="{ picked: selectedProtectionCode === 'PREMIUM' }" @click="selectedProtectionCode = 'PREMIUM'"><h3>尊享无忧套餐 <strong>¥120/天</strong></h3><p>✓ 安心保障套餐全部内容</p><p>✓ 车上人员险</p><p>✓ 划痕险（免赔）</p><p>✓ 优先客服支持</p><a>保障详情 ›</a></article>
+              </div>
+            </section>
+
+            <section class="detail-info-grid">
+              <article class="fee-include"><h3>费用包含</h3><div><span><el-icon><Van /></el-icon>车辆租金</span><span><el-icon><Check /></el-icon>基础保险</span><span><el-icon><Headset /></el-icon>24h 道路救援</span><span><el-icon><Money /></el-icon>增值税/手续费</span></div></article>
+              <article class="tips-box"><h3>温馨提示</h3><ul><li>取车时请携带本人有效身份证、驾驶证及信用卡</li><li>车辆取租流程约需 10 分钟，逾期将优先保留</li><li>车辆以实际取车为准（同车型，或同级车配置）</li><li>里程限制为 200 公里/天，超出部分 ¥2.0/公里</li></ul></article>
+              <article class="store-card"><h3>取车信息 <a>修改</a></h3><p><el-icon><Location /></el-icon><b>{{ orderPreview.pickupSnapshot.poiName }}</b><br>{{ orderPreview.pickupSnapshot.address }}</p><strong><el-icon><Calendar /></el-icon>{{ orderPreview.pickupTime }}</strong></article>
+              <article class="days-card"><span>⇄</span><b>{{ orderPreview.tripDays }} 天</b></article>
+              <article class="store-card"><h3>还车信息 <a>修改</a></h3><p><el-icon><Location /></el-icon><b>{{ orderPreview.returnSnapshot.poiName }}</b><br>{{ orderPreview.returnSnapshot.address }}</p><strong><el-icon><Calendar /></el-icon>{{ orderPreview.returnTime }}</strong></article>
+            </section>
+
+            <section class="bottom-guarantees">
+              <article><el-icon><Check /></el-icon><b>免费取消</b><span>取车前 24 小时可免费取消</span></article>
+              <article><el-icon><Check /></el-icon><b>价格保障</b><span>同车型同价，差价退还</span></article>
+              <article><el-icon><Headset /></el-icon><b>全天客服</b><span>7×24 小时专业客服支持</span></article>
+              <article><el-icon><Check /></el-icon><b>安全出行</b><span>车况严检，出行更安心</span></article>
+            </section>
           </div>
 
-          <div class="feature-grid">
-            <article><el-icon><Clock /></el-icon><b>超长续航</b><span>554km CLTC</span></article>
-            <article><el-icon><Switch /></el-icon><b>智能驾驶辅助</b><span>Autopilot</span></article>
-            <article><el-icon><Van /></el-icon><b>舒适座舱</b><span>15 英寸中控屏</span></article>
-            <article><el-icon><Money /></el-icon><b>费用透明</b><span>明细逐项展示</span></article>
-          </div>
-
-          <h3 class="block-title">租车方案</h3>
-          <div class="package-grid">
-            <article><h4>基础保险 <em>已包含</em></h4><p>基础险、第三者责任险、7×24 小时客服支持。</p><a>保障详情</a></article>
-            <article class="picked"><h4>安心保障套餐 <em>推荐</em><strong>¥60/天</strong></h4><p>车辆损失险、轮胎玻璃保障、道路救援，适合多数自驾场景。</p><a>保障详情</a></article>
-            <article><h4>尊享无忧套餐 <strong>¥120/天</strong></h4><p>包含安心保障全部内容，并增加车上人员险与优先客服。</p><a>保障详情</a></article>
-          </div>
-
-          <div class="info-grid">
-            <article><h3>取车信息</h3><p>杭州萧山国际机场店<br>萧山区迎宾大道 600 号，T3 航站楼停车场内</p><b>2025-06-01 周日 10:00</b></article>
-            <article><h3>还车信息</h3><p>杭州萧山国际机场店<br>萧山区迎宾大道 600 号，T3 航站楼停车场内</p><b>2025-06-03 周二 10:00</b></article>
-          </div>
-        </main>
-
-        <aside class="order-panel">
-          <div class="order-head"><h3>订单概览</h3><button @click="switchView('home')">修改行程</button></div>
-          <div class="timeline">
-            <p><i></i><span>取车</span><b>杭州萧山国际机场店<br>6月01日 周日 10:00</b></p>
-            <p><i></i><span>还车</span><b>杭州萧山国际机场店<br>6月03日 周二 10:00</b></p>
-          </div>
-          <div class="cost-list">
-            <p><span>租期</span><b>2 天</b></p>
-            <p><span>乘车人数</span><b>2 人</b></p>
-            <p><span>车辆租金</span><b>¥{{ activeCar.price * rentalDays }}</b></p>
-            <p><span>安心保障套餐</span><b>¥{{ protectionFee }}</b></p>
-            <p><span>手续费</span><b>¥{{ serviceFee }}</b></p>
-          </div>
-          <div class="price-compare">
-            <h4>价格对比</h4>
-            <p><span>PlanGo</span><b>¥{{ totalPrice }}</b></p>
-            <p><span>一嗨租车</span><b>¥{{ totalPrice + 10 }}</b></p>
-            <p><span>神州租车</span><b>¥{{ totalPrice + 17 }}</b></p>
-          </div>
-          <div class="final-price"><span>预估总价</span><strong>¥{{ totalPrice }}</strong><small>价格已包含税费及手续费</small></div>
-          <button class="book-button">立即预订</button>
-          <button class="compare-button">加入对比</button>
-          <em><el-icon><Check /></el-icon>现在预订可免费取消</em>
-        </aside>
-      </div>
-    </section>
+          <aside class="order-aside">
+            <section class="order-card">
+              <header><h2>订单概览</h2><a>修改行程</a></header>
+              <div class="order-route"><p><i></i><span>取车</span><b>{{ orderPreview.pickupSnapshot.poiName }}<br><em>{{ orderPreview.pickupTime }}</em></b></p><p><i></i><span>还车</span><b>{{ orderPreview.returnSnapshot.poiName }}<br><em>{{ orderPreview.returnTime }}</em></b></p></div>
+              <div class="order-meta"><p><span>租期</span><b>{{ orderPreview.tripDays }} 天</b></p><p><span>乘车人数</span><b>{{ orderPreview.peopleCount }} 人</b></p><p><span>预计里程</span><b>{{ orderPreview.mileageText }}</b></p></div>
+              <div class="cost-detail"><h3>费用明细 <small>（预估总价）</small></h3><p><span>车辆租金（{{ selectedQuote.rentalDays }}天）</span><b>¥{{ yuan(selectedFee.rentalFeeCent) }}</b></p><p><span>基础服务费</span><b>¥{{ yuan(selectedFee.baseServiceFeeCent) }}</b></p><p><span>车辆整备费</span><b>¥{{ yuan(selectedFee.vehiclePrepareFeeCent) }}</b></p><p><span>异地还车费</span><b>¥{{ yuan(selectedFee.oneWayFeeCent) }}</b></p><p><span>送车上门费</span><b>¥{{ yuan(selectedFee.deliveryFeeCent) }}</b></p><p><span>{{ selectedProtection.name }}</span><b>¥{{ yuan(protectionFeeCent) }}</b></p><p><span>租车押金</span><b>{{ selectedFee.rentalDepositCent ? `¥${yuan(selectedFee.rentalDepositCent)}` : '可免押' }}</b></p><p><span>违章押金</span><b>¥{{ yuan(selectedFee.violationDepositCent) }}</b></p></div>
+              <div class="compare-box"><h3>价格对比 <small>（同车型均价）</small></h3><p class="best"><span>PlanGo <em>推荐</em></span><b>¥866/2天</b></p><p><span>一嗨租车</span><b>¥876/2天</b></p><p><span>神州租车</span><b>¥883/2天</b></p></div>
+              <div class="total-box"><span>预估总价</span><strong>¥{{ yuan(payableTotalCent) }}</strong><small>免押门槛：{{ selectedFee.depositFreeThresholdScore }} 分</small><small v-if="latestOrderId">订单ID：{{ latestOrderId }}</small></div>
+              <button class="book-now" :disabled="bookingLoading" @click="bookNow">▣ {{ bookingLoading ? '预订中...' : '立即预订' }}</button>
+              <button class="compare-now">加入对比</button>
+              <footer><el-icon><Check /></el-icon>现在预订可免费取消</footer>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.rental-page{flex:1;background:#f5f8fc;color:#0e1f3b;padding-bottom:58px}.hero-section{position:relative;min-height:332px;overflow:hidden;background:#eaf5ff}.hero-bg{position:absolute;inset:0;background:radial-gradient(circle at 72% 0%,rgba(255,255,255,.95),transparent 28%),linear-gradient(180deg,#e8f5ff 0%,#f8fcff 72%,#fff 100%)}.hero-bg:after{content:"";position:absolute;left:-4%;right:-4%;bottom:-68px;height:156px;border-radius:50% 50% 0 0;background:linear-gradient(10deg,#d7ecd1 0 35%,#f7fbff 36% 62%,#dcefff 63%)}.hero-grid{position:relative;z-index:1;min-height:332px;display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:48px;align-items:start;padding-top:42px}.eyebrow{display:inline-flex;margin-bottom:12px;color:#0f6bff;font-size:12px;font-weight:900;letter-spacing:1.5px}.hero-copy h1{margin:0;color:#0b1b37;font-size:48px;line-height:1.08;font-weight:900;letter-spacing:0}.hero-copy p{width:min(560px,100%);margin:16px 0 24px;color:#415270;font-size:18px;line-height:1.7}.hero-metrics{display:flex;gap:14px}.hero-metrics article{min-width:132px;padding:14px 18px;border:1px solid rgba(205,219,239,.95);border-radius:8px;background:rgba(255,255,255,.78);box-shadow:0 16px 42px rgba(35,91,150,.08)}.hero-metrics strong{display:block;color:#0f6bff;font-size:24px;line-height:1}.hero-metrics span{display:block;margin-top:7px;color:#61708a}.hero-stage{position:relative;height:270px}.flight-mark{position:absolute;left:38px;top:20px;width:58px;height:28px;transform:rotate(13deg)}.flight-mark:before{content:"";position:absolute;inset:12px 0 8px;background:#5790d7;border-radius:999px}.flight-mark:after{content:"";position:absolute;left:22px;top:0;width:12px;height:28px;background:#5790d7;clip-path:polygon(50% 0,100% 100%,50% 78%,0 100%)}.city-line{position:absolute;right:18px;bottom:70px;width:350px;height:150px;opacity:.32;background:linear-gradient(90deg,transparent,#77acd9 10% 14%,transparent 15% 23%,#5e9bd1 24% 30%,transparent 31% 41%,#8dbce1 42% 47%,transparent 48% 55%,#6fa9d5 56% 62%,transparent 63%)}.road-line{position:absolute;right:0;left:40px;bottom:40px;height:14px;border-top:2px solid rgba(63,108,151,.2);border-bottom:1px solid rgba(63,108,151,.12)}.vehicle-render{position:relative;width:224px;height:84px}.vehicle-render:before{content:"";position:absolute;left:18px;right:18px;bottom:22px;height:44px;border-radius:54px 58px 16px 16px;background:linear-gradient(180deg,#fff,#e9eef5);border:1px solid #d7e0ec;box-shadow:0 20px 34px rgba(14,31,59,.18)}.vehicle-render:after{content:"";position:absolute;left:70px;right:68px;bottom:60px;height:36px;border-radius:50px 50px 0 0;background:linear-gradient(180deg,#eaf5ff,#cbdff2);border:1px solid #cbd9e8;border-bottom:0}.vehicle-render i:before,.vehicle-render i:after{content:"";position:absolute;bottom:6px;width:38px;height:38px;border-radius:50%;background:#182334;border:9px solid #d6deea;z-index:2}.vehicle-render i:before{left:46px}.vehicle-render i:after{right:46px}.vehicle-xl{position:absolute;right:16px;bottom:42px;width:390px;height:144px}.vehicle-xl:before{height:62px;bottom:28px;border-radius:80px 84px 20px 20px}.vehicle-xl:after{left:118px;right:116px;bottom:88px;height:56px}.vehicle-xl i:before,.vehicle-xl i:after{width:54px;height:54px;bottom:2px;border-width:11px}.vehicle-xl i:before{left:70px}.vehicle-xl i:after{right:70px}.vehicle-blue:before{background:linear-gradient(180deg,#2c91ff,#096be4);border-color:#0869d8}.vehicle-blue:after{background:linear-gradient(180deg,#e7f4ff,#b9dbf6);border-color:#0869d8}.tone-white .vehicle-render:before,.tone-white.vehicle-render:before{background:linear-gradient(180deg,#fff,#f1f5f9)}.tone-silver .vehicle-render:before,.tone-silver.vehicle-render:before{background:linear-gradient(180deg,#fefefe,#e4e9ef)}.tone-pearl .vehicle-render:before,.tone-pearl.vehicle-render:before{background:linear-gradient(180deg,#fff,#edf4f9)}.tone-graphite .vehicle-render:before,.tone-graphite.vehicle-render:before{background:linear-gradient(180deg,#f7fafc,#cbd5e1)}.tone-black .vehicle-render:before,.tone-black.vehicle-render:before{background:linear-gradient(180deg,#3a4657,#141b27);border-color:#2a3545}.search-panel{position:relative;z-index:2;margin-top:-44px;padding:22px 28px;border:1px solid #dbe6f3;border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 22px 60px rgba(30,73,126,.12)}.search-top{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e6edf6;padding-bottom:14px;margin-bottom:20px}.search-tabs{display:flex;gap:34px}.search-tabs button{border:0;background:transparent;color:#1d3554;font-weight:900;font-size:17px;cursor:pointer}.search-tabs button.active{color:#0f6bff}.checkline{color:#34455f}.search-grid{display:grid;grid-template-columns:1.2fr 1.6fr 1.6fr 1fr;gap:16px 18px}.search-grid span{display:block;margin-bottom:8px;color:#677790;font-size:13px}.search-grid b{height:52px;display:flex;align-items:center;gap:8px;border:1px solid #dce6f2;border-radius:8px;background:#fff;padding:0 14px;color:#071936;font-size:18px}.primary-action{grid-column:4;grid-row:2;height:64px;border:0;border-radius:8px;background:#1169f5;color:#fff;font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;box-shadow:0 16px 30px rgba(17,105,245,.22)}.landing-content{padding-top:28px}.promise-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.promise-row article{display:flex;gap:16px;align-items:center;padding:18px 22px;border:1px solid #dfe8f5;border-radius:8px;background:#fff;box-shadow:0 14px 38px rgba(24,64,113,.07)}.promise-row .el-icon{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:#eef5ff;color:#0f6bff;font-size:27px}.promise-row b{display:block;font-size:17px}.promise-row span{display:block;margin-top:4px;color:#65758e}.section-head{display:flex;align-items:end;justify-content:space-between;margin:28px 0 16px}.section-head h2,.process-band h2{margin:0;color:#0b1b37;font-size:24px}.section-head p{margin:6px 0 0;color:#65758e}.section-head button{border:1px solid #cfe0f5;border-radius:8px;background:#fff;color:#0f6bff;font-weight:800;padding:10px 16px;cursor:pointer}.featured-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.featured-card{overflow:hidden;border:1px solid #dfe8f5;border-radius:8px;background:#fff;box-shadow:0 14px 38px rgba(24,64,113,.07);cursor:pointer;transition:.2s}.featured-card:hover{transform:translateY(-3px);box-shadow:0 22px 50px rgba(24,64,113,.12)}.featured-visual{height:148px;display:grid;place-items:center;background:linear-gradient(135deg,#f8fbff,#e9f2ff)}.featured-info{padding:16px}.featured-info span,.quote-badge,.detail-copy>span,.package-grid em{display:inline-flex;border-radius:4px;background:#e8f2ff;color:#0f6bff;padding:4px 8px;font-size:12px;font-weight:900;font-style:normal}.featured-info h3{margin:10px 0 8px;font-size:19px}.featured-info p{height:44px;margin:0;color:#65758e;line-height:1.6}.featured-info div{margin-top:12px}.featured-info b{color:#ff6b00;font-size:25px}.featured-info small{color:#66758b}.process-band{margin-top:30px;text-align:center}.process-steps{display:grid;grid-template-columns:1fr 80px 1fr 80px 1fr 80px 1fr;align-items:center;margin-top:16px}.process-steps article{display:grid;gap:6px}.process-steps span{margin:auto;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#e8f2ff;color:#0f6bff;font-weight:900}.process-steps b{font-size:18px}.process-steps small{color:#65758e}.process-steps i{border-top:2px dashed #8dbaff}.page-view{padding-top:28px}.summary-card{display:grid;grid-template-columns:1.25fr 1.25fr 1.3fr 1.3fr .6fr .6fr 150px;gap:0;align-items:center;padding:18px 22px;border:1px solid #dbe6f3;border-radius:8px;background:#fff;box-shadow:0 16px 42px rgba(24,64,113,.08)}.summary-card article{padding:0 20px;border-right:1px solid #e5edf6}.summary-card span{display:block;color:#6b7b93;font-size:13px;margin-bottom:7px}.summary-card b{font-size:15px}.summary-card button,.toolbar-row button,.quote-price button,.back-button,.order-head button,.book-button,.compare-button{border:1px solid #0f6bff;border-radius:8px;background:#fff;color:#0f6bff;font-weight:900;cursor:pointer}.summary-card button{height:46px}.toolbar-row{display:flex;justify-content:space-between;gap:18px;margin:24px 0 14px}.category-tabs,.sort-tabs{display:flex;gap:12px;flex-wrap:wrap}.category-tabs button,.sort-tabs button{height:40px;padding:0 18px;border-color:#d7e3f1;color:#213650}.category-tabs button.active,.sort-tabs button.active{background:#0f6bff;border-color:#0f6bff;color:#fff}.results-layout{display:grid;grid-template-columns:minmax(0,1fr) 342px;gap:24px}.quote-list{display:grid;gap:10px}.quote-card{position:relative;display:grid;grid-template-columns:255px 1fr 150px;gap:24px;align-items:center;padding:20px 26px;border:1px solid #dfe8f5;border-radius:8px;background:#fff;box-shadow:0 14px 36px rgba(24,64,113,.06);cursor:pointer}.quote-card.selected{border-color:#0f6bff;box-shadow:0 18px 44px rgba(15,107,255,.13)}.quote-badge{position:absolute;left:18px;top:16px;background:#5ecf7a;color:#fff}.quote-visual{height:132px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#f8fbff,#e8f1ff)}.quote-main h3{margin:0 0 8px;font-size:26px}.quote-main p{margin:0 0 12px;color:#64748b}.spec-line,.rating-line,.service-tags{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.spec-line span{display:inline-flex;align-items:center;gap:5px;color:#34465f}.rating-line{margin:10px 0;color:#ff6b00;font-weight:900}.rating-line em{font-style:normal;color:#65758e;font-weight:500}.service-tags span{padding:6px 10px;border-radius:6px;background:#f0f5fb;color:#56677f;font-size:13px}.quote-price{text-align:center}.quote-price small{display:block;color:#64748b}.quote-price strong{color:#ff6b00;font-size:32px}.quote-price>span{color:#64748b}.quote-price button{display:block;width:126px;height:42px;margin:12px auto 8px;background:#0f6bff;color:#fff}.quote-price a{color:#0f6bff;font-size:13px}.trip-aside{display:grid;gap:16px;align-content:start}.map-panel{position:relative;height:218px;overflow:hidden;border:1px solid #dfe8f5;border-radius:8px;background:#eef7ff;box-shadow:0 14px 36px rgba(24,64,113,.06)}.map-grid{position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,107,255,.06) 1px,transparent 1px),linear-gradient(rgba(15,107,255,.06) 1px,transparent 1px),radial-gradient(circle at 78% 18%,#c9e6ff,transparent 20%),radial-gradient(circle at 18% 80%,#d5f0e0,transparent 24%);background-size:34px 34px,34px 34px,auto,auto}.map-panel b{position:absolute;padding:8px 12px;border-radius:20px;background:#fff;color:#12304f;font-size:13px;box-shadow:0 10px 25px rgba(30,73,126,.12)}.pin-start{left:46px;top:28px}.pin-end{right:24px;bottom:32px}.map-panel i{position:absolute;left:92px;top:72px;width:150px;height:88px;border-right:5px dotted #0f6bff;border-bottom:5px dotted #0f6bff;border-radius:0 0 52px 0}.aside-card{padding:22px;border:1px solid #dfe8f5;border-radius:8px;background:#fff;box-shadow:0 14px 36px rgba(24,64,113,.06)}.aside-card h3{margin:0 0 18px}.aside-card p{display:flex;justify-content:space-between;gap:18px;margin:14px 0;color:#65758e}.aside-card b{text-align:right;color:#152744}.include-card div{display:grid;grid-template-columns:1fr 1fr;gap:18px}.include-card span{display:flex;align-items:center;gap:8px;color:#263b58}.include-card .el-icon{color:#0f6bff}.back-button{display:flex;align-items:center;gap:6px;margin-bottom:16px;border:0;color:#213650;background:transparent}.detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 365px;gap:24px}.detail-content{padding:24px;border:1px solid #dfe8f5;border-radius:8px;background:#fff;box-shadow:0 14px 38px rgba(24,64,113,.07)}.detail-hero-card{display:grid;grid-template-columns:1fr 1.35fr;min-height:290px;overflow:hidden;border-radius:8px;background:linear-gradient(120deg,#fff 10%,#eef7ff 62%,#ddf0ff)}.detail-copy{padding:28px}.detail-copy h2{margin:14px 0 10px;font-size:42px;line-height:1.08}.detail-copy p{margin:0 0 18px;color:#53647c;font-size:17px;line-height:1.7}.detail-copy b{display:flex;align-items:center;gap:6px;color:#ff6b00}.detail-specs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}.detail-specs span{display:flex;align-items:center;gap:6px;color:#263b58}.detail-stage{position:relative}.detail-stage .vehicle-xl{right:26px;bottom:52px}.gallery-row{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:16px 0}.gallery-row span{position:relative;height:78px;display:grid;place-items:center;overflow:hidden;border:1px solid #dfe8f5;border-radius:8px;background:#f8fbff}.gallery-row span.active{border:2px solid #0f6bff}.gallery-row b{position:absolute;right:8px;bottom:6px;color:#64748b;font-size:12px}.vehicle-thumb{transform:scale(.58)}.feature-grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #dfe8f5;border-radius:8px}.feature-grid article{display:grid;grid-template-columns:42px 1fr;gap:3px 10px;padding:16px 18px;border-right:1px solid #e7edf5}.feature-grid article:last-child{border-right:0}.feature-grid .el-icon{grid-row:span 2;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#eef5ff;color:#0f6bff;font-size:24px}.feature-grid span{color:#65758e}.block-title{margin:22px 0 12px}.package-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.package-grid article{padding:18px;border:1px solid #dfe8f5;border-radius:8px;background:#fff}.package-grid article.picked{border-color:#0f6bff;box-shadow:0 14px 34px rgba(15,107,255,.12)}.package-grid h4{display:flex;align-items:center;gap:8px;margin:0 0 12px}.package-grid strong{margin-left:auto;color:#0f6bff}.package-grid p{margin:0;color:#5f6f88;line-height:1.7}.package-grid a{display:inline-block;margin-top:12px;color:#0f6bff;font-weight:800}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.info-grid article{padding:18px;border:1px solid #dfe8f5;border-radius:8px;background:#fbfdff}.info-grid h3{margin:0 0 10px}.info-grid p{color:#5f6f88;line-height:1.7}.info-grid b{font-size:18px}.order-panel{position:sticky;top:96px;align-self:start;padding:24px;border:1px solid #dfe8f5;border-radius:8px;background:#fff;box-shadow:0 14px 38px rgba(24,64,113,.08)}.order-head{display:flex;align-items:center;justify-content:space-between}.order-head h3{margin:0}.order-head button{border:0}.timeline{margin:20px 0;padding-bottom:16px;border-bottom:1px solid #e4ecf5}.timeline p{display:grid;grid-template-columns:16px 42px 1fr;gap:10px;margin:0 0 18px}.timeline i{width:12px;height:12px;margin-top:5px;border-radius:50%;background:#0f6bff}.timeline p:last-child i{background:#b8c4d3}.timeline span{color:#65758e}.timeline b{line-height:1.7}.cost-list{padding-bottom:16px;border-bottom:1px solid #e4ecf5}.cost-list p,.price-compare p{display:flex;justify-content:space-between;margin:11px 0;color:#65758e}.cost-list b,.price-compare b{color:#152744}.price-compare{padding:16px 0;border-bottom:1px solid #e4ecf5}.price-compare h4{margin:0 0 10px}.price-compare p:first-of-type{padding:8px 10px;border:1px solid #dfe8f5;border-radius:6px;background:#fbfdff}.price-compare p:first-of-type b{color:#ff6b00}.final-price{padding:16px 0;text-align:right}.final-price span,.final-price small{display:block;color:#65758e}.final-price strong{display:block;color:#ff6b00;font-size:40px;line-height:1.1}.book-button,.compare-button{width:100%;height:48px;margin-top:12px}.book-button{background:#0f6bff;color:#fff}.compare-button{background:#fff;color:#0f6bff}.order-panel em{display:flex;justify-content:center;gap:6px;margin-top:18px;color:#18b56a;font-style:normal;font-weight:900}@media(max-width:1180px){.hero-grid,.results-layout,.detail-layout{grid-template-columns:1fr}.hero-stage{display:none}.summary-card,.search-grid,.promise-row,.featured-grid{grid-template-columns:1fr 1fr}.primary-action{grid-column:auto;grid-row:auto}.order-panel{position:static}.quote-card{grid-template-columns:220px 1fr}.quote-price{grid-column:1/-1;text-align:left}.quote-price button{margin-left:0}.trip-aside{grid-template-columns:1fr 1fr}.map-panel{grid-column:1/-1}}@media(max-width:760px){.hero-copy h1{font-size:36px}.hero-grid{padding-top:28px}.hero-metrics,.search-top,.toolbar-row{flex-direction:column;align-items:flex-start}.search-grid,.promise-row,.featured-grid,.summary-card,.quote-card,.trip-aside,.detail-hero-card,.gallery-row,.feature-grid,.package-grid,.info-grid{grid-template-columns:1fr}.summary-card article{border-right:0;border-bottom:1px solid #e5edf6;padding:12px 0}.process-steps{grid-template-columns:1fr;gap:14px}.process-steps i{display:none}.detail-stage{min-height:210px}.feature-grid article{border-right:0;border-bottom:1px solid #e7edf5}.feature-grid article:last-child{border-bottom:0}}
+.rental-page{min-height:calc(100vh - 72px);background:#f7fbff;color:#071936}.home-hero{height:370px;position:relative;overflow:hidden;background:linear-gradient(180deg,#eaf5ff 0%,#f8fcff 72%,#fff 100%)}.home-hero:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(174,213,248,.34),transparent 26%,transparent 72%,rgba(181,218,251,.38))}.home-hero:after{content:"";position:absolute;left:-6vw;right:-6vw;bottom:-88px;height:190px;border-radius:50% 50% 0 0;background:linear-gradient(9deg,#b9d99f 0 18%,#dceec9 19% 35%,#fff 36% 67%,#d5e9fb 68%)}.home-hero-inner,.home-main,.results-main{width:min(1500px,calc(100vw - 72px));margin:0 auto}.home-hero-inner{position:relative;z-index:1;height:100%;display:grid;grid-template-columns:620px 1fr}.hero-copy{padding-top:48px}.hero-copy h1{margin:0;color:#081c3d;font-size:50px;line-height:1.08;font-weight:900;letter-spacing:0}.hero-copy p{margin:12px 0 20px;color:#344864;font-size:19px}.hero-promises{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:560px}.hero-promises article{height:70px;display:grid;grid-template-columns:42px 1fr;gap:6px 12px;align-items:center;padding:0 18px;border:1px solid #dce7f4;border-radius:8px;background:rgba(255,255,255,.78)}.hero-promises .el-icon{grid-row:span 2;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#1468ff;background:#eef5ff;font-size:23px}.hero-promises b{font-size:15px}.hero-promises span{align-self:start;color:#66758d;font-size:13px}.hero-art{position:relative}.hero-art img{position:absolute;right:58px;bottom:92px;width:500px;height:236px;object-fit:cover;mix-blend-mode:multiply;filter:drop-shadow(0 22px 18px rgba(31,74,118,.18))}.skyline{position:absolute;right:0;bottom:104px;width:520px;height:180px;opacity:.34;background:linear-gradient(90deg,transparent,#8fbfe6 4% 7%,transparent 8% 16%,#75aee0 17% 22%,transparent 23% 33%,#5799d4 34% 38%,transparent 39% 48%,#97c6e9 49% 55%,transparent 56% 66%,#6aa7d8 67% 72%,transparent 73%)}.plane{position:absolute;left:64px;top:54px;width:80px;height:40px;transform:rotate(15deg)}.plane:before{content:"";position:absolute;left:0;right:0;top:17px;height:9px;border-radius:999px;background:#8ab7e5}.plane:after{content:"";position:absolute;left:32px;top:0;width:14px;height:40px;background:#8ab7e5;clip-path:polygon(50% 0,100% 100%,50% 78%,0 100%)}.home-main{position:relative;z-index:2;margin-top:-54px}.search-card{padding:18px 30px 24px;border:1px solid #dce6f2;border-radius:16px;background:rgba(255,255,255,.96);box-shadow:0 20px 60px rgba(30,73,126,.12)}.tabs{height:42px;display:flex;align-items:flex-start;gap:42px;border-bottom:1px solid #e4edf6;margin-bottom:18px}.tabs button{height:42px;border:0;background:transparent;color:#172d4d;font-size:16px;font-weight:900;cursor:pointer}.tabs .active{position:relative;color:#0f6bff}.tabs .active:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:4px;border-radius:999px;background:#176bff}.tabs label{margin-left:auto;font-weight:700}.tabs input{width:16px;height:16px;vertical-align:-3px}.tabs small{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;border:1px solid #9eb1ca;color:#7b8aa3;font-size:11px}.form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px 24px;align-items:end}.field{display:grid;gap:8px;min-width:0}.field.city{grid-column:span 3}.field.pickup,.field.return{grid-column:span 4}.field.date,.field.mini,.search-btn{grid-column:span 2}.field.short{grid-column:span 1}.field span{color:#66758d;font-size:13px}.field b{height:48px;display:flex;align-items:center;gap:8px;border:1px solid #dce6f2;border-radius:8px;background:#fff;padding:0 13px;color:#10213b;font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden}.field .el-icon{flex:0 0 auto;color:#384b67;font-size:18px}.field em{width:8px;height:8px;margin-left:auto;border-right:1px solid #627089;border-bottom:1px solid #627089;transform:rotate(45deg)}.search-btn{height:58px;border:0;border-radius:8px;background:#1268f4;color:#fff;font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:0 18px 32px rgba(18,104,244,.22);cursor:pointer}.benefit-row{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin:20px 0 18px}.benefit-row article{height:72px;display:flex;align-items:center;gap:18px;padding:0 30px;border:1px solid #dfe8f5;border-radius:8px;background:#fff}.benefit-row .el-icon{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#1468ff;background:#eef5ff;font-size:27px}.benefit-row b{display:block;font-size:16px}.benefit-row span{display:block;margin-top:4px;color:#64748b;font-size:13px}.cars-section h2,.why-section h2{margin:0 0 12px;font-size:24px}.car-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.home-car{height:148px;display:grid;grid-template-columns:170px 1fr;gap:16px;align-items:center;padding:14px 18px;border:1px solid #dfe8f5;border-radius:8px;background:#fff}.home-car img{width:170px;height:112px;object-fit:cover;border-radius:6px;mix-blend-mode:multiply}.home-car h3{margin:0 0 8px;font-size:18px}.home-car p{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 8px}.home-car p span{border-radius:4px;background:#edf1f7;color:#5c687b;padding:3px 7px;font-size:12px}.home-car small{display:block;color:#66758d;font-size:13px}.home-car strong{display:block;margin-top:7px;color:#ff6b00;font-size:22px}.home-car em{color:#64748b;font-size:13px;font-style:normal}.why-section{position:relative;margin-top:20px;padding:4px 0 42px}.why-section:before{content:"";position:absolute;left:-8vw;right:-8vw;top:34px;bottom:-90px;background:linear-gradient(180deg,rgba(255,255,255,.15),rgba(255,255,255,.78)),linear-gradient(12deg,#b9d99f 0 24%,#eef7ff 25% 62%,#cfe6fb 63%);z-index:-1}.why-flow{display:grid;grid-template-columns:1fr 130px 1fr 130px 1fr 130px 1fr;align-items:center;text-align:center;min-height:126px}.why-flow article{display:grid;justify-items:center;gap:6px}.why-flow i{width:58px;height:58px;border-radius:16px;display:block;background:linear-gradient(135deg,#70b7ff,#1f6fff)}.why-flow b{font-size:16px}.why-flow span{color:#526176;font-size:13px}.why-flow em{height:2px;border-top:2px dashed #86b8ff}.why-flow em:after{content:"";display:block;width:8px;height:8px;margin:-5px 0 0 auto;border-top:2px solid #86b8ff;border-right:2px solid #86b8ff;transform:rotate(45deg)}
+.results-main{padding:24px 0 36px}.summary-bar{height:96px;display:grid;grid-template-columns:1.5fr 1.5fr 1.5fr 1.5fr .8fr .8fr 168px;align-items:center;padding:0 28px;border:1px solid #dce6f5;border-radius:12px;background:#fff;box-shadow:0 12px 34px rgba(25,68,128,.08)}.summary-bar article{height:50px;display:flex;flex-direction:column;justify-content:center;padding:0 26px 0 0;border-right:1px solid #e0e8f3}.summary-bar span{color:#6c7b91;font-size:13px}.summary-bar b{display:flex;align-items:center;gap:8px;margin-top:9px;color:#0c213e;font-size:16px}.summary-bar .el-icon{color:#10213b}.summary-bar button{height:48px;border:1px solid #1268f4;border-radius:8px;background:#fff;color:#1268f4;font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer}.results-layout{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:24px;margin-top:24px}.category-tabs{display:flex;gap:16px;margin-bottom:18px}.category-tabs button{width:78px;height:38px;border:1px solid #d7e2f0;border-radius:7px;background:#f8fbff;color:#243955;font-weight:800;cursor:pointer}.category-tabs .active{background:#1268f4;border-color:#1268f4;color:#fff}.sort-row{display:flex;align-items:center;gap:12px;margin-bottom:14px}.sort-row button{height:38px;border:1px solid #d7e2f0;border-radius:7px;background:#fff;color:#172d4d;padding:0 18px;font-weight:800;cursor:pointer}.sort-row .active{color:#1268f4;border-color:#a9c7ff}.sort-row span{margin-left:auto;color:#4f5e78;font-size:14px}.result-list{display:grid;gap:6px}.result-card{position:relative;min-height:142px;display:grid;grid-template-columns:300px minmax(0,1fr) 170px;gap:22px;align-items:center;padding:16px 32px 16px 22px;border:1px solid #dce6f2;border-radius:9px;background:#fff}.result-card.selected{border:2px solid #3978ff;padding:15px 31px 15px 21px}.choose-dot{position:absolute;left:14px;top:50%;width:24px;height:24px;margin-top:-12px;border-radius:50%;display:grid;place-items:center;background:#1268f4;color:#fff}.car-label{position:absolute;left:14px;top:16px;border-radius:5px;color:#fff;padding:4px 10px;font-size:13px;font-weight:900}.car-label.green{background:#68c579}.car-label.purple{background:#7d6af2}.recommend{position:absolute;left:86px;top:16px;border-radius:5px;background:#2f75ff;color:#fff;padding:4px 10px;font-size:13px;font-weight:900}.result-card img{width:270px;height:105px;object-fit:cover;object-position:center;border-radius:5px;mix-blend-mode:multiply}.car-info h2{margin:0 0 12px;font-size:23px;line-height:1}.specs{display:flex;gap:24px;color:#1e3555;font-size:14px}.specs span{display:flex;align-items:center;gap:7px}.car-info p{display:flex;align-items:center;gap:8px;margin:12px 0 10px;color:#ff7a00}.car-info p b{color:#ff7a00}.car-info p em{font-style:normal;color:#243955}.service-tags{display:flex;gap:10px}.service-tags span{border-radius:6px;background:#f0f4fa;color:#5c6a80;padding:6px 13px;font-size:13px}.price-box{text-align:center}.price-box small{display:block;color:#748096}.price-box strong{color:#ff6b00;font-size:30px;font-weight:900}.price-box>span{color:#243955}.price-box button{display:block;width:122px;height:36px;margin:9px auto 8px;border:0;border-radius:6px;background:#1268f4;color:#fff;font-weight:900}.price-box a{color:#1268f4;font-size:13px;font-weight:800}.result-note{display:flex;align-items:center;gap:8px;margin:18px 0 0 330px;color:#748096}.result-note .el-icon{color:#1268f4}.results-side{display:grid;gap:14px;align-content:start}.map-card{height:210px;overflow:hidden;border-radius:12px 12px 0 0;background:#eaf5ff}.route-map{position:relative;height:100%;background:linear-gradient(90deg,rgba(82,154,233,.08) 1px,transparent 1px),linear-gradient(rgba(82,154,233,.08) 1px,transparent 1px),radial-gradient(circle at 78% 28%,#cce7ff,transparent 24%),radial-gradient(circle at 28% 78%,#d7f0df,transparent 24%);background-size:28px 28px,28px 28px,auto,auto}.route-map b{position:absolute;border-radius:18px;background:#fff;color:#10213b;padding:9px 14px;font-size:13px;font-weight:900;box-shadow:0 8px 18px rgba(24,64,113,.12)}.route-map .start{left:68px;top:28px}.route-map .end{right:30px;bottom:30px}.route-map i{position:absolute;left:125px;top:72px;width:140px;height:74px;border-right:6px dotted #2f75ff;border-bottom:6px dotted #2f75ff;border-radius:0 0 50px 0;transform:rotate(7deg)}.side-card{padding:20px;border:1px solid #dce6f2;border-radius:12px;background:#fff;box-shadow:0 12px 30px rgba(25,68,128,.06)}.map-card+.side-card{margin-top:-14px;border-radius:0 0 12px 12px}.side-card h3{margin:0 0 18px;font-size:20px}.overview p{display:flex;justify-content:space-between;margin:14px 0;color:#6c7b91}.overview p b{text-align:right;color:#10213b}.timeline{padding-bottom:8px}.timeline p{display:grid;grid-template-columns:18px 50px 1fr;gap:8px;align-items:start;margin:0 0 14px}.timeline i{width:10px;height:10px;margin-top:4px;border-radius:50%;border:2px solid #42628c}.include-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px 22px}.include-grid article{display:grid;grid-template-columns:42px 1fr;gap:3px 10px}.include-grid .el-icon{grid-row:span 2;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#eff5ff;color:#1268f4;font-size:23px}.include-grid b{font-size:15px}.include-grid span{color:#6c7b91;font-size:13px}.include footer{display:flex;align-items:center;gap:8px;margin:18px -20px -20px;padding:14px 20px;border-top:1px solid #e2e9f3;color:#63728a}.include footer .el-icon{color:#1268f4}
+.detail-main{width:min(1500px,calc(100vw - 72px));margin:0 auto;padding:16px 0 36px}.back-link{height:32px;border:0;background:transparent;color:#172d4d;font-size:15px;cursor:pointer}.detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;margin-top:10px}.detail-left{display:grid;gap:12px}.vehicle-hero-card{position:relative;min-height:280px;display:grid;grid-template-columns:390px minmax(0,1fr);overflow:hidden;border:1px solid #dce6f2;border-radius:10px;background:linear-gradient(90deg,#fff 0 32%,#eef7ff 58%,#dff0ff)}.favorite{position:absolute;right:22px;top:20px;z-index:3;height:36px;border:0;border-radius:18px;background:#fff;color:#10213b;font-weight:900;padding:0 16px;box-shadow:0 8px 18px rgba(24,64,113,.1)}.vehicle-copy{position:relative;z-index:2;padding:28px 28px}.vehicle-copy>span{display:inline-flex;border-radius:5px;background:#dff8e8;color:#19a25b;padding:4px 10px;font-size:13px;font-weight:900}.vehicle-copy h1{margin:12px 0 8px;color:#081c3d;font-size:37px;line-height:1.08}.vehicle-copy p{margin:0 0 16px;color:#415270;font-size:16px}.rating{display:flex;align-items:center;gap:9px;color:#ff7a00;font-size:16px}.rating em{color:#10213b;font-style:normal;font-weight:900;margin-left:16px}.vehicle-specs{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px;color:#10213b}.vehicle-specs span{display:flex;align-items:center;gap:9px}.vehicle-stage{position:relative}.vehicle-stage .city-bg{position:absolute;inset:0;background:linear-gradient(90deg,transparent,#8fbfe6 12% 16%,transparent 17% 25%,#75aee0 26% 31%,transparent 32% 42%,#5799d4 43% 48%,transparent 49%);opacity:.26}.vehicle-stage img{position:absolute;right:50px;bottom:14px;width:520px;height:240px;object-fit:cover;mix-blend-mode:multiply;filter:drop-shadow(0 24px 20px rgba(24,64,113,.2))}.thumb-row{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.thumb-row button{height:72px;border:1px solid #dce6f2;border-radius:8px;background:#f8fbff;overflow:hidden;cursor:pointer}.thumb-row .active{border:2px solid #1268f4}.thumb-row img{width:100%;height:100%;object-fit:cover}.thumb-row .more{position:relative;background:#2b3445;color:#fff;font-size:25px;font-weight:900}.feature-strip{height:58px;display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #dce6f2;border-radius:9px;background:#fff}.feature-strip article{display:grid;grid-template-columns:42px 1fr;gap:2px 10px;align-items:center;padding:0 26px}.feature-strip i{grid-row:span 2;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#eff5ff;color:#1268f4;font-style:normal;font-weight:900}.feature-strip b{font-size:15px}.feature-strip span{color:#6c7b91}.plan-section h2{margin:0 0 10px;font-size:19px}.plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.plan-grid article{min-height:128px;border:1px solid #dce6f2;border-radius:9px;background:#fff;padding:18px 22px}.plan-grid .picked{border:2px solid #1268f4;padding:17px 21px}.plan-grid h3{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:16px}.plan-grid em{border-radius:999px;background:#dff8e8;color:#19a25b;font-size:12px;font-style:normal;padding:3px 8px}.plan-grid strong{margin-left:auto;color:#1268f4}.plan-grid p{margin:6px 0;color:#31435d;font-size:13px}.plan-grid a{display:inline-block;margin-top:8px;color:#1268f4;font-size:13px;font-weight:900}.detail-info-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:10px}.fee-include,.tips-box,.store-card,.days-card{border:1px solid #dce6f2;border-radius:9px;background:#fff;padding:16px 20px}.fee-include h3,.tips-box h3,.store-card h3{margin:0 0 12px;font-size:17px}.fee-include div{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.fee-include span{display:flex;align-items:center;gap:8px;color:#243955}.tips-box ul{margin:0;padding-left:18px;color:#31435d;line-height:1.6}.store-card{min-height:100px}.store-card h3{display:flex;justify-content:space-between}.store-card a{color:#1268f4;font-size:14px}.store-card p{margin:0 0 10px;color:#6c7b91;line-height:1.5}.store-card b{color:#10213b}.store-card strong{display:flex;align-items:center;gap:8px;font-size:17px}.days-card{display:grid;place-items:center;text-align:center}.days-card span{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;border:1px solid #cfe0ff;color:#1268f4;font-size:28px}.days-card b{font-size:18px}.bottom-guarantees{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #dce6f2;border-radius:9px;background:#fff}.bottom-guarantees article{display:grid;grid-template-columns:40px 1fr;gap:2px 10px;padding:12px 20px;border-right:1px solid #e2e9f3}.bottom-guarantees article:last-child{border-right:0}.bottom-guarantees .el-icon{grid-row:span 2;color:#1268f4;font-size:23px}.bottom-guarantees b{font-size:15px}.bottom-guarantees span{color:#6c7b91;font-size:13px}.order-aside{align-self:start;position:sticky;top:90px}.order-card{border:1px solid #dce6f2;border-radius:10px;background:#fff;padding:22px;box-shadow:0 18px 44px rgba(24,64,113,.08)}.order-card header{display:flex;justify-content:space-between;align-items:center}.order-card h2{margin:0;font-size:22px}.order-card a{color:#1268f4;font-weight:900}.order-route{padding:22px 0 14px;border-bottom:1px solid #e2e9f3}.order-route p{display:grid;grid-template-columns:14px 42px 1fr;gap:8px;margin:0 0 18px}.order-route i{width:10px;height:10px;margin-top:5px;border-radius:50%;background:#1268f4}.order-route p:last-child i{background:#b9c4d3}.order-route span{color:#31435d}.order-route b{line-height:1.55}.order-route em{font-style:normal;color:#31435d;font-weight:500}.order-meta,.cost-detail,.compare-box{padding:14px 0;border-bottom:1px solid #e2e9f3}.order-meta p,.cost-detail p,.compare-box p{display:flex;justify-content:space-between;margin:10px 0;color:#31435d}.order-meta b,.cost-detail b,.compare-box b{color:#10213b}.cost-detail h3,.compare-box h3{margin:0 0 10px;font-size:17px}.cost-detail small,.compare-box small{color:#6c7b91;font-weight:500}.compare-box p{height:30px;align-items:center;padding:0 10px;border-radius:5px}.compare-box .best{background:#f8fbff;border:1px solid #e2e9f3}.compare-box em{margin-left:8px;border-radius:5px;background:#3778ff;color:#fff;font-style:normal;font-size:12px;padding:2px 7px}.compare-box .best b{color:#ff6b00}.total-box{text-align:right;padding:16px 0}.total-box span,.total-box small{display:block;color:#6c7b91}.total-box strong{display:block;color:#ff6b00;font-size:40px;line-height:1}.book-now,.compare-now{width:100%;height:44px;border-radius:7px;font-size:17px;font-weight:900;cursor:pointer}.book-now{border:0;background:#1268f4;color:#fff}.compare-now{margin-top:12px;border:1px solid #1268f4;background:#fff;color:#1268f4}.order-card footer{display:flex;justify-content:center;gap:8px;margin-top:18px;color:#10b981;font-weight:900}
+.field input,.field select{width:100%;min-width:0;border:0;outline:0;background:transparent;color:#10213b;font:inherit;font-weight:800}.field input:disabled{color:#8b98aa}.field input[type=date],.field input[type=time]{font-size:14px}.plan-grid article{cursor:pointer}.book-now:disabled,.search-btn:disabled{opacity:.72;cursor:not-allowed}.price-box a{cursor:pointer}.inline-fee-detail{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:8px 28px;margin-top:2px;padding:14px 18px;border-top:1px solid #e5edf7;background:#f8fbff;border-radius:0 0 8px 8px}.inline-fee-detail p,.inline-fee-detail strong{display:flex;justify-content:space-between;gap:14px;margin:0;color:#64748b;font-size:13px}.inline-fee-detail b{color:#10213b}.inline-fee-detail strong{color:#10213b}.inline-fee-detail strong b{color:#ff6b00;font-size:16px}.inline-fee-detail em{grid-column:1/-1;color:#7b8aa3;font-size:12px;font-style:normal}
+@media(max-width:1180px){.home-hero{height:auto}.home-hero-inner,.results-layout{grid-template-columns:1fr}.home-hero-inner{padding-bottom:82px}.hero-art{display:none}.home-main,.home-hero-inner,.results-main{width:calc(100vw - 40px)}.form-grid,.benefit-row,.car-grid{grid-template-columns:1fr 1fr}.field,.field.city,.field.pickup,.field.return,.field.date,.field.short,.field.mini,.search-btn{grid-column:auto}.summary-bar{height:auto;grid-template-columns:1fr 1fr;padding:18px}.summary-bar article{border-right:0}.results-side{grid-template-columns:1fr 1fr}.map-card{grid-column:1/-1}.map-card+.side-card{margin-top:0;border-radius:12px}}@media(max-width:760px){.hero-copy h1{font-size:36px}.hero-promises,.form-grid,.benefit-row,.car-grid,.why-flow,.summary-bar,.results-side,.inline-fee-detail{grid-template-columns:1fr}.search-card{padding:16px}.tabs{gap:22px}.tabs label{margin-left:0}.home-car,.result-card{grid-template-columns:1fr;height:auto}.result-card{padding:20px}.result-card.selected{padding:19px}.result-card img{width:100%;height:150px}.price-box{text-align:left}.price-box button{margin-left:0}.sort-row,.category-tabs{flex-wrap:wrap}.result-note{margin-left:0}}
 </style>

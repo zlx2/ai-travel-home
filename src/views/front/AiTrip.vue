@@ -2,14 +2,14 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading, MagicStick } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { aiApi, rentalApi, tripApi } from '../../api'
 import DayPlanCard from '../../components/trip-builder/DayPlanCard.vue'
 import FinalReviewPanel from '../../components/trip-builder/FinalReviewPanel.vue'
 import RentalQuoteDeck from '../../components/trip-builder/RentalQuoteDeck.vue'
 import RequirementSummaryBar from '../../components/trip-builder/RequirementSummaryBar.vue'
 import TripRouteMap, { type TripMapPlace } from '../../components/trip-builder/TripRouteMap.vue'
-import type { BuilderDay, BuilderStep, RentalQuote } from '../../components/trip-builder/types'
+import type { BuilderDay, BuilderStep, DayMoment, RentalQuote } from '../../components/trip-builder/types'
 import type { AnalyzeResult, RecommendationContext, Requirement, TripDay, TripPlan } from '../../types'
 import { homeImage } from '../../utils/homeImages'
 
@@ -49,6 +49,10 @@ const rentalTripForm=reactive({
 })
 const reviseVisible=ref(false)
 const reviseText=ref('')
+const dayRevisionHints=reactive<Record<number,string[]>>({})
+const dayOrderDirty=reactive<Record<number,boolean>>({})
+const dayOrderIssues=reactive<Record<number,string[]>>({})
+const dayOrderSuggestions=reactive<Record<number,DayMoment[]>>({})
 
 const form=reactive<Requirement>({
   departure:'上海',
@@ -87,6 +91,12 @@ const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
 const currentDay=computed(()=>days.value[currentDayIndex.value])
 const dayOverlayVisible=computed(()=>currentDay.value?.status==='generating')
+const pendingDayNo=ref<number|null>(null)
+const dayBusy=computed(()=>dayOverlayVisible.value||confirming.value||pendingDayNo.value!==null)
+const generationNoticeVisible=computed(()=>dayOverlayVisible.value||pendingDayNo.value!==null)
+const generationNoticeDay=computed(()=>pendingDayNo.value||currentDay.value?.day||1)
+const generationNoticeText=computed(()=>pendingDayNo.value?'正在生成下一天，当前已确认内容会保留。':'正在替换当前 Day，并避开已确认景点。')
+const currentOrderNeedsReview=computed(()=>!!currentDay.value&&(!!dayOrderDirty[currentDay.value.day]||!!dayOrderIssues[currentDay.value.day]?.length))
 const lockedCount=computed(()=>days.value.filter(day=>day.status==='locked').length)
 const progressStyle=computed(()=>({background:`conic-gradient(#10b981 ${Math.round((lockedCount.value/Math.max(days.value.length,1))*360)}deg,#e5eaf0 0deg)`}))
 const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.value.moments.map((moment,index)=>({
@@ -435,42 +445,57 @@ function assertFirstDayGenerated(tripPlan:TripPlan){
 
 const confirmCurrentDay=async()=>{
   if(!currentDay.value)return
+  const confirmedIndex=currentDayIndex.value
   confirming.value=true
   try{
     if(!currentDay.value.moments.length){
       await ensureDayGenerated(currentDayIndex.value)
     }
-    days.value[currentDayIndex.value]={...currentDay.value,status:'locked'}
-    const next=currentDayIndex.value+1
+    days.value[confirmedIndex]={...currentDay.value,status:'locked'}
+    const next=confirmedIndex+1
     if(next<days.value.length){
-      currentDayIndex.value=next
+      pendingDayNo.value=days.value[next].day
       await ensureDayGenerated(next)
+      currentDayIndex.value=next
     }else{
       step.value='FINAL_REVIEW'
     }
   }catch(error){
+    if(step.value==='DAY_BUILDING'&&currentDayIndex.value===confirmedIndex&&days.value[confirmedIndex]?.status==='locked'){
+      days.value[confirmedIndex]={...days.value[confirmedIndex],status:'active'}
+    }
     ElMessage.error(error instanceof Error?error.message:'单日行程生成失败，请稍后重试')
   }finally{
+    pendingDayNo.value=null
     confirming.value=false
   }
 }
 
 const selectDay=async(index:number)=>{
-  if(index<0||index>=days.value.length||index===currentDayIndex.value)return
-  currentDayIndex.value=index
+  if(dayBusy.value||index<0||index>=days.value.length||index===currentDayIndex.value)return
+  const target=days.value[index]
+  if(!target)return
   try{
-    await ensureDayGenerated(index)
+    if(!target.moments.length){
+      pendingDayNo.value=target.day
+      await ensureDayGenerated(index)
+    }
+    currentDayIndex.value=index
   }catch(error){
     ElMessage.error(error instanceof Error?error.message:'单日行程生成失败，请稍后重试')
+  }finally{
+    pendingDayNo.value=null
   }
 }
 
-const regenerateCurrentDay=async()=>{
-  if(!currentDay.value)return
+const regenerateCurrentDay=async(revisionText='')=>{
+  if(dayBusy.value||!currentDay.value)return
   const index=currentDayIndex.value
   days.value[index]={...days.value[index],status:'generating'}
   try{
-    await ensureDayGenerated(index,true)
+    await ensureDayGenerated(index,true,revisionText)
+    dayOrderDirty[days.value[index].day]=false
+    dayOrderIssues[days.value[index].day]=[]
     ElMessage.success(`Day ${String(days.value[index].day).padStart(2,'0')} 已重新生成`)
   }catch(error){
     days.value[index]={...days.value[index],status:'active'}
@@ -480,9 +505,126 @@ const regenerateCurrentDay=async()=>{
 
 const submitRevision=()=>{
   if(!reviseText.value.trim())return ElMessage.warning('先写下你希望怎么调整')
+  const conflict=detectRevisionConflict(reviseText.value)
+  if(conflict){
+    ElMessageBox.alert(conflict,'需求存在冲突',{type:'warning'})
+    if(currentDay.value)dayOrderIssues[currentDay.value.day]=[conflict]
+    return
+  }
+  if(currentDay.value){
+    const dayNo=currentDay.value.day
+    dayRevisionHints[dayNo]=[...(dayRevisionHints[dayNo]||[]),reviseText.value.trim()]
+  }
+  const revision=reviseText.value.trim()
   reviseVisible.value=false
   reviseText.value=''
-  regenerateCurrentDay()
+  regenerateCurrentDay(revision)
+}
+
+const handleDayReorder=(moments:DayMoment[])=>{
+  if(!currentDay.value)return
+  const index=currentDayIndex.value
+  const dayNo=currentDay.value.day
+  const scheduled=rescheduleMoments(moments)
+  const issues=validateManualOrder(scheduled)
+  days.value[index]={
+    ...currentDay.value,
+    moments:scheduled,
+    route:scheduled.map(item=>item.title).filter(Boolean).slice(0,6),
+    status:currentDay.value.status==='locked'?'active':currentDay.value.status,
+  }
+  dayOrderDirty[dayNo]=true
+  dayOrderIssues[dayNo]=issues
+  dayOrderSuggestions[dayNo]=issues.length?suggestOrder(scheduled):[]
+  if(issues.length){
+    ElMessage.warning('排序已调整，但存在需要核查的问题')
+  }else{
+    ElMessage.success('排序已调整，地图路线已更新')
+  }
+}
+
+function rescheduleMoments(moments:DayMoment[]){
+  let cursor=normalizeClock(moments[0]?.time)||dayStartMinutes(currentDay.value?.day||1,hasRental.value)
+  return moments.map((moment,index)=>{
+    const time=index===0?normalizeClock(moment.time)||cursor:cursor
+    const next={...moment,time:formatClock(time)}
+    const stay=durationToMinutes(moment.suggestedDuration)
+    cursor=time+Math.max(30,stay)+(hasRental.value?35:25)
+    return next
+  })
+}
+
+function validateManualOrder(moments:DayMoment[]){
+  const issues:string[]=[]
+  const pickupIndex=moments.findIndex(item=>item.type==='RENTAL_PICKUP')
+  if(pickupIndex>0)issues.push('提车/交车节点必须在当天第一位。')
+  const lunch=moments.find(item=>item.type==='LUNCH')
+  const dinner=moments.find(item=>item.type==='DINNER')
+  const hotel=moments.find(item=>item.type==='HOTEL')
+  const lunchTime=normalizeClock(lunch?.time)
+  const dinnerTime=normalizeClock(dinner?.time)
+  const hotelTime=normalizeClock(hotel?.time)
+  if(lunchTime!=null&&(lunchTime<11*60||lunchTime>14*60))issues.push('午餐时间偏离饭点，建议安排在 11:00-14:00。')
+  if(dinnerTime!=null&&(dinnerTime<17*60||dinnerTime>20*60))issues.push('晚餐时间偏离饭点，建议安排在 17:00-20:00。')
+  if(hotel&&hotelTime!=null&&dinnerTime!=null&&hotelTime<dinnerTime)issues.push('住宿/休息不应早于晚餐。')
+  if(moments.length>7)issues.push('当天节点较多，带父母或轻松游可能偏累。')
+  return issues
+}
+
+function suggestOrder(moments:DayMoment[]){
+  const priority:Record<string,number>={RENTAL_PICKUP:0,LUNCH:3,DINNER:6,HOTEL:9,RENTAL_RETURN:10}
+  const scenic=moments.filter(item=>!(item.type&&item.type in priority))
+  const firstScenic=scenic.slice(0,2)
+  const restScenic=scenic.slice(2)
+  const suggested=[
+    ...moments.filter(item=>item.type==='RENTAL_PICKUP'),
+    ...firstScenic,
+    ...moments.filter(item=>item.type==='LUNCH'),
+    ...restScenic,
+    ...moments.filter(item=>item.type==='DINNER'),
+    ...moments.filter(item=>item.type==='HOTEL'),
+    ...moments.filter(item=>item.type==='RENTAL_RETURN'),
+  ]
+  const seen=new Set<string>()
+  return rescheduleMoments(suggested.filter(item=>{
+    if(seen.has(item.key))return false
+    seen.add(item.key)
+    return true
+  }))
+}
+
+const checkCurrentOrder=()=>{
+  if(!currentDay.value)return
+  const issues=validateManualOrder(currentDay.value.moments)
+  dayOrderIssues[currentDay.value.day]=issues
+  dayOrderSuggestions[currentDay.value.day]=issues.length?suggestOrder(currentDay.value.moments):[]
+  if(!issues.length){
+    dayOrderDirty[currentDay.value.day]=false
+    ElMessage.success('排序核查通过：当前顺序基本合理')
+    return
+  }
+  ElMessageBox.alert(issues.join('\n'),'排序核查发现问题',{type:'warning'})
+}
+
+const applySuggestedOrder=()=>{
+  if(!currentDay.value)return
+  const suggested=dayOrderSuggestions[currentDay.value.day]
+  if(!suggested?.length)return
+  handleDayReorder(suggested)
+  dayOrderDirty[currentDay.value.day]=false
+  dayOrderIssues[currentDay.value.day]=[]
+  ElMessage.success('已按建议修正排序')
+}
+
+function detectRevisionConflict(text:string){
+  const input=text.trim()
+  if(/不要太累|轻松|少开|少走/.test(input)&&/一天|当天/.test(input)&&/(乐山|峨眉|都江堰|青城山|跨城|三个城市|四个城市)/.test(input)){
+    return '调整要求同时强调轻松/少走，又要求当天加入长距离跨城点，和当前轻松自驾设定冲突。'
+  }
+  if(/午餐|吃饭/.test(input)&&/(凌晨|早上|晚上|夜里)/.test(input)){
+    return '用餐时间要求和正常饭点冲突，请改成午餐或晚餐附近的时间。'
+  }
+  return ''
 }
 
 const createOrder=async()=>{
@@ -785,7 +927,7 @@ function normalizeRentalActivity(activity:any,rentalEnabled:boolean){
   }
 }
 
-async function ensureDayGenerated(index:number,forceRegenerate=false){
+async function ensureDayGenerated(index:number,forceRegenerate=false,revisionText=''){
   const target=days.value[index]
   if(!target||!result.value?.requirement)return
   if(!forceRegenerate&&target.moments.length>0){
@@ -797,7 +939,7 @@ async function ensureDayGenerated(index:number,forceRegenerate=false){
   }
   if(!generationSessionId.value)throw new Error('缺少行程生成会话，请重新生成')
   days.value[index]={...target,status:'generating',subtitle:'正在生成这一天的行程...'}
-  const day=await aiApi.generateDay(generationSessionId.value,target.day,{requestMode:'USER',forceRegenerate,prefetchNext:!forceRegenerate})
+  const day=await aiApi.generateDay(generationSessionId.value,target.day,{requestMode:'USER',forceRegenerate,prefetchNext:!forceRegenerate,revisionText})
   const oneDayPlan={...(plan.value||emptyTripPlan(result.value.requirement)),dailyPlans:[day]}
   const builtDays=createBuilderDays(oneDayPlan,result.value.requirement,hasRental.value&&!!selectedQuote.value)
   const builderDay=builtDays.find(item=>Number(item.day)===Number(target.day))
@@ -1284,13 +1426,6 @@ function coordinateForPlace(title:string,destination:string,index:number){
       </section>
 
       <section v-if="step==='DAY_BUILDING'&&!generating&&currentDay" class="day-builder">
-        <div v-if="dayOverlayVisible" class="day-generate-mask">
-          <div>
-            <el-icon><Loading class="is-loading"/></el-icon>
-            <b>正在生成 Day {{ String(currentDay.day).padStart(2,'0') }}</b>
-            <span>正在避开已确认景点，重新规划当天路线...</span>
-          </div>
-        </div>
         <header class="trip-summary builder-card">
           <img :src="coverForDestination(activeRequirement.destination)" alt="trip cover">
           <div class="summary-title">
@@ -1308,34 +1443,52 @@ function coordinateForPlace(title:string,destination:string,index:number){
           </div>
         </header>
 
+        <div v-if="generationNoticeVisible" class="day-generate-notice builder-card">
+          <el-icon><Loading class="is-loading"/></el-icon>
+          <div>
+            <b>正在生成 Day {{ String(generationNoticeDay).padStart(2,'0') }}</b>
+            <span>{{ generationNoticeText }}</span>
+          </div>
+        </div>
+
         <div class="builder-main">
           <DayPlanCard
             :day="currentDay"
             :selected-quote="hasRental ? selectedQuote : null"
             :confirming="confirming"
-            @confirm="confirmCurrentDay"
-            @regenerate="regenerateCurrentDay"
-            @revise="reviseVisible=true"
+            @reorder="handleDayReorder"
           />
           <div class="map-workbench">
             <TripRouteMap :places="currentMapPlaces" :tip="currentDay.tips[1]" @route-stats="updateRouteStats"/>
             <section class="map-control-panel builder-card">
+              <div v-if="dayOrderDirty[currentDay.day] || dayOrderIssues[currentDay.day]?.length" class="manual-order-alert" :class="{ conflict: dayOrderIssues[currentDay.day]?.length }">
+                <b>{{ dayOrderIssues[currentDay.day]?.length ? '排序需要核查' : '路线顺序已手动调整' }}</b>
+                <span>{{ dayOrderIssues[currentDay.day]?.[0] || '地图已按新顺序重绘，建议核查饭点和路线顺序。' }}</span>
+              </div>
               <div class="map-progress-dots" aria-label="行程进度">
                 <template v-for="(day,index) in days" :key="day.day">
-                  <button type="button" :class="{ active: day.day===currentDay.day, locked: day.status==='locked', generating: day.status==='generating' }" @click="selectDay(index)">{{ String(day.day).padStart(2,'0') }}</button>
+                  <button type="button" :disabled="dayBusy" :class="{ active: day.day===currentDay.day, locked: day.status==='locked', generating: day.status==='generating' }" @click="selectDay(index)">{{ String(day.day).padStart(2,'0') }}</button>
                   <i v-if="index<days.length-1"></i>
                 </template>
               </div>
               <div class="map-actions">
-                <button @click="regenerateCurrentDay">
-                  <b>调整路线</b>
-                  <small>换个思路，重新规划</small>
+                <button :disabled="dayBusy" @click="regenerateCurrentDay()">
+                  <b>重新生成今天</b>
+                  <small>只替换当前 Day</small>
                 </button>
-                <button @click="reviseVisible=true">
+                <button :disabled="dayBusy" @click="reviseVisible=true">
                   <b>修改偏好</b>
                   <small>景点 / 餐饮 / 节奏</small>
                 </button>
-                <el-button class="confirm-btn" type="primary" :loading="confirming" @click="confirmCurrentDay">确认 Day {{ String(currentDay.day).padStart(2,'0') }}</el-button>
+                <button v-if="currentOrderNeedsReview" :disabled="dayBusy" :class="{ active: dayOrderDirty[currentDay.day] }" @click="checkCurrentOrder">
+                  <b>核查排序</b>
+                  <small>检查饭点 / 路线</small>
+                </button>
+                <button v-if="dayOrderSuggestions[currentDay.day]?.length" :disabled="dayBusy" @click="applySuggestedOrder">
+                  <b>按建议修正</b>
+                  <small>应用推荐顺序</small>
+                </button>
+                <el-button class="confirm-btn" type="primary" :disabled="dayBusy" :loading="confirming" @click="confirmCurrentDay">确认 Day {{ String(currentDay.day).padStart(2,'0') }}</el-button>
               </div>
             </section>
           </div>
@@ -1582,46 +1735,39 @@ function coordinateForPlace(title:string,destination:string,index:number){
   gap: 18px;
 }
 
-.day-generate-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
+.day-generate-notice {
   display: grid;
-  place-items: center;
-  border-radius: 18px;
-  background: rgba(248, 250, 252, .72);
-  backdrop-filter: blur(4px);
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
 }
 
-.day-generate-mask div {
-  min-width: 260px;
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  padding: 28px 34px;
-  border: 1px solid #e1eaf3;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .96);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, .14);
-}
-
-.day-generate-mask .el-icon {
-  width: 48px;
-  height: 48px;
+.day-generate-notice .el-icon {
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   color: #0f9f8f;
   background: #ecfdf5;
-  font-size: 28px;
+  font-size: 24px;
 }
 
-.day-generate-mask b {
+.day-generate-notice b,
+.day-generate-notice span {
+  display: block;
+}
+
+.day-generate-notice b {
   color: #111827;
-  font-size: 18px;
+  font-size: 15px;
 }
 
-.day-generate-mask span {
+.day-generate-notice span {
+  margin-top: 3px;
   color: #64748b;
   font-size: 13px;
 }
@@ -1754,6 +1900,11 @@ function coordinateForPlace(title:string,destination:string,index:number){
   cursor: pointer;
 }
 
+.map-progress-dots button:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+}
+
 .map-progress-dots button.active,
 .map-progress-dots button.locked {
   color: #fff;
@@ -1788,9 +1939,11 @@ function coordinateForPlace(title:string,destination:string,index:number){
   transform: rotate(45deg);
 }
 
+.manual-order-alert{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;align-items:center;padding:10px 12px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;color:#475569;font-size:13px}.manual-order-alert b{color:#1d4ed8}.manual-order-alert.conflict{border-color:#fed7aa;background:#fff7ed}.manual-order-alert.conflict b{color:#c2410c}
+
 .map-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 180px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   align-items: center;
 }
@@ -1810,6 +1963,16 @@ function coordinateForPlace(title:string,destination:string,index:number){
   background: #f1f5f9;
 }
 
+.map-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.map-actions button.active {
+  background:#eff6ff;
+  color:#1d4ed8;
+}
+
 .map-actions b,
 .map-actions small {
   display: block;
@@ -1826,6 +1989,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
 }
 
 .map-actions .confirm-btn {
+  min-width: 170px;
   height: 44px;
   border: 0!important;
   border-radius: 12px!important;

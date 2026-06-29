@@ -116,6 +116,7 @@ export interface RentalQuotePreviewRequest { requirement:any }
 export interface RentalQuotePreviewResponse { routeMode?:string; rentalCity?:string; citycode?:string; quoteOptions:any[] }
 export const rentalApi={
   previewQuotes(payload:RentalQuotePreviewRequest){return request.post('/rental/quotes/preview',payload,{suppressError:true}) as Promise<RentalQuotePreviewResponse>},
+  latestOrderedQuotes(){return request.get('/rental/quotes/latest-ordered',{suppressError:true}) as Promise<any[]>},
   createOrder(payload:any){return request.post('/rental/orders',payload) as Promise<{id:number}>},
   payOrder(id:number,payload?:{success?:boolean}){return request.post(`/rental/orders/${id}/pay`,payload||{}) as Promise<void>},
   listMyOrders(){return request.get('/rental/orders/my') as Promise<any[]>},

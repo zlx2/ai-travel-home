@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ChatDotRound, Collection, EditPen, Search, Star } from '@element-plus/icons-vue'
 import { baseApi, noteApi } from '../../api'
 import { useUserStore } from '../../stores/user'
 import type { Note } from '../../types'
 
 const router = useRouter()
+const route = useRoute()
 const store = useUserStore()
 const loading = ref(false)
 const items = ref<Note[]>([])
@@ -57,9 +58,28 @@ const goNote = (note: Note) => {
 }
 const statusText = (s: number) => (s === 0 ? '草稿' : s === 1 ? '已发布' : '')
 
-onMounted(() => {
-  baseApi.tags().then(v => tagList.value = v).catch(() => {})
-  load()
+const handleTagParam = async () => {
+  const tagName = route.query.tag ? decodeURIComponent(String(route.query.tag)) : ''
+  if (!tagName || !tagList.value.length) return
+  const matchedTag = tagList.value.find(t => t.name === tagName)
+  if (matchedTag) {
+    params.tagId = matchedTag.id
+    params.pageNum = 1
+    load()
+  }
+}
+
+onMounted(async () => {
+  try {
+    tagList.value = await baseApi.tags()
+  } catch {}
+  handleTagParam()
+  if (!params.tagId) load()
+})
+
+watch(() => route.query.tag, () => {
+  params.tagId = 0
+  handleTagParam()
 })
 </script>
 

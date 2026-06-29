@@ -46,6 +46,10 @@ const useRoute = (item: any) => router.push({
   query: { destination: item.destination, days: item.days, preferences: item.preferences.join(',') },
 })
 
+const goToNotesWithTag = (tag: string) => {
+  router.push({ path: '/notes', query: { tag: encodeURIComponent(tag) } })
+}
+
 const imageOfDestination = (item?: Pick<Destination, 'name' | 'coverUrl'>) =>
   destinationImageCandidates(item?.name, item?.coverUrl)
 
@@ -92,7 +96,7 @@ const imageOfNote = (note: Note) =>
       <section class="container compact-dashboard">
         <article class="dash-panel destination-panel"><div class="panel-head"><h3>热门目的地</h3><a>查看更多 ›</a></div><el-skeleton v-if="homeLoading && !destinations.length" class="home-skeleton grid-skeleton" :rows="3" animated /><div v-else class="mini-destinations"><button v-for="item in destinations" :key="item.id"><img :src="imageOfDestination(item)[0]" @error="setNextHomeImage($event, imageOfDestination(item))"><span>{{ item.name }}</span></button></div></article>
         <div class="dash-middle">
-          <article class="dash-panel tag-panel"><h3>热门标签</h3><div><el-tag v-for="tag in ['美食','夜景','亲子','轻松游','拍照打卡','文化历史','海岛','徒步','自驾']" :key="tag" round effect="light">{{ tag }}</el-tag></div></article>
+          <article class="dash-panel tag-panel"><h3>热门标签</h3><div><el-tag v-for="tag in ['美食','夜景','亲子','轻松游','拍照打卡','文化历史','海岛','徒步','自驾']" :key="tag" round effect="light" @click="goToNotesWithTag(tag)">{{ tag }}</el-tag></div></article>
           <article class="dash-panel route-panel"><div class="panel-head"><h3>推荐行程</h3><a>查看更多 ›</a></div><div class="mini-routes"><button v-for="(item, i) in routes" :key="item.destination" @click="useRoute(item)"><img :src="imageOfRoute(item, i)[0]" @error="setNextHomeImage($event, imageOfRoute(item, i))"><b>{{ item.destination }} {{ item.days }} 日游</b><span>{{ item.preferences.join(' · ') }}</span></button></div></article>
         </div>
         <article class="dash-panel note-panel"><div class="panel-head"><h3>热门游记</h3><a @click="router.push('/notes')">查看更多 ›</a></div><el-skeleton v-if="homeLoading && !notes.length" class="home-skeleton note-skeleton" :rows="4" animated /><div v-else class="mini-notes"><button v-for="note in notes" :key="note.id" @click="router.push(`/notes/${note.id}`)"><img :src="imageOfNote(note)[0]" @error="setNextHomeImage($event, imageOfNote(note))"><b>{{ note.title }}</b><p>{{ note.summary }}</p><div><span>{{ note.authorNickname }}</span><small>♥ {{ note.likeCount }}</small></div></button></div></article>

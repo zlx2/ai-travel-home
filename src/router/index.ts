@@ -5,6 +5,7 @@ import { TOKEN_KEY } from '../utils/auth'
 const routes=[
   {path:'/login',component:()=>import('../views/front/Login.vue'),meta:{guest:true}},
   {path:'/register',component:()=>import('../views/front/Register.vue'),meta:{guest:true}},
+  {path:'/forgot-password',component:()=>import('../views/front/ForgotPassword.vue'),meta:{guest:true}},
   {path:'/',component:()=>import('../layouts/FrontLayout.vue'),children:[
     {path:'',name:'home',component:()=>import('../views/front/Home.vue')},
     {path:'ai-trip',name:'ai-trip',component:()=>import('../views/front/AiTrip.vue'),meta:{auth:true}},

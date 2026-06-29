@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { aiApi, tripApi } from '../../api'
+import { aiApi, rentalApi, tripApi } from '../../api'
 import DayPlanCard from '../../components/trip-builder/DayPlanCard.vue'
 import FinalReviewPanel from '../../components/trip-builder/FinalReviewPanel.vue'
 import RentalQuoteDeck from '../../components/trip-builder/RentalQuoteDeck.vue'
@@ -14,7 +14,7 @@ import type { AnalyzeResult, RecommendationContext, Requirement, TripDay, TripPl
 import { homeImage } from '../../utils/homeImages'
 
 const route=useRoute()
-const userInput=ref('带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')
+const userInput=ref('带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')
 const showForm=ref(false)
 const analyzing=ref(false)
 const generating=ref(false)
@@ -26,6 +26,7 @@ const saving=ref(false)
 const confirming=ref(false)
 const orderCreated=ref(false)
 const paid=ref(false)
+const rentalOrderId=ref<number|null>(null)
 const result=ref<AnalyzeResult|null>(null)
 const followUpAnswers=reactive<Record<string,string>>({})
 const plan=ref<TripPlan|null>(null)
@@ -35,6 +36,17 @@ const step=ref<BuilderStep>('INPUT')
 const days=ref<BuilderDay[]>([])
 const currentDayIndex=ref(0)
 const selectedQuoteId=ref('comfort')
+const quoteLoading=ref(false)
+const quoteOptions=ref<RentalQuote[]>([])
+const rentalContext=ref<any|null>(null)
+const selectedBackendQuote=ref<any|null>(null)
+const rentalTripForm=reactive({
+  arrivalMode:'还不确定',
+  arrivalTimeRange:'按到达时间安排',
+  routeStructure:'城市+周边',
+  dailyDrivingLimit:'近郊自驾（单日累计约2-4小时）',
+  returnMode:'同城还车',
+})
 const reviseVisible=ref(false)
 const reviseText=ref('')
 
@@ -44,7 +56,7 @@ const form=reactive<Requirement>({
   days:3,
   budget:4000,
   budgetType:'TOTAL',
-  peopleCount:2,
+  peopleCount:3,
   preferences:['自然风光','历史文化','美食体验'],
   pace:'LIGHT',
   avoidances:['不要太累'],
@@ -69,7 +81,7 @@ const needsMoreInfo=computed(()=>step.value==='INPUT'&&pendingQuestions.value.le
 const landingMode=computed(()=>step.value==='INPUT'&&!needsMoreInfo.value)
 const hasRental=computed(()=>{
   const text=`${userInput.value} ${form.preferences.join(' ')}`
-  return /自驾|租车|落地|取车|还车|多城市|江浙沪|周边/.test(text)
+  return /自驾|租车|落地|取车|还车|多城市|江浙沪|周边|自然|亲子|父母/.test(text)
 })
 const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')?'出行方式：落地租车':'路线模式：租车自驾'):'城市轻松游')
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
@@ -101,7 +113,7 @@ function durationToMinutes(value?:string){
   return minute?Number(minute[1]):90
 }
 
-const quoteOptions=computed<RentalQuote[]>(()=>{
+const fallbackQuoteOptions=():RentalQuote[]=>{
   const req=activeRequirement.value
   const dayCount=Math.max(1,req.days||3)
   const pickup=req.destination?`${req.destination}站`:'目的地门店'
@@ -111,16 +123,160 @@ const quoteOptions=computed<RentalQuote[]>(()=>{
     {id:'suv',label:'性价比优选',name:'SUV 经济型',subtitle:'哈弗 H6 或同级',seats:5,luggage:2,tags:['自动挡','山路友好'],pickup,returnPlace:pickup,pickupTime:'06-01 09:00',returnTime:`06-${String(dayCount).padStart(2,'0')} 18:00`,totalPrice:780,dayCount,serviceTags:['基本保险','24h 道路救援','免费取消'],tone:'teal'},
     {id:'business',label:'宽敞舒适',name:'7座商务车',subtitle:'别克 GL8 或同级',seats:7,luggage:4,tags:['自动挡','家庭多人'],pickup:airport,returnPlace:airport,pickupTime:'06-01 09:00',returnTime:`06-${String(dayCount).padStart(2,'0')} 18:00`,totalPrice:980,dayCount,serviceTags:['基本保险','24h 道路救援','免费取消','宽敞座舱'],tone:'gold'},
   ]
+}
+
+const yuan=(cent:number|undefined)=>Math.round((cent||0)/100)
+const pickupTimeLabel=(requirement:Requirement)=>requirement.travelDate?`${requirement.travelDate} 10:00`:'到达后交车'
+const returnTimeLabel=(requirement:Requirement,days:number)=>requirement.travelDate?`${requirement.travelDate} +${days}天`:`${days}天后还车`
+const quoteTone=(index:number):RentalQuote['tone']=>(['blue','teal','gold'] as const)[index%3]
+const quoteToView=(quote:any,index:number):RentalQuote=>{
+  const dayCount=Number(quote.rentalDays||activeRequirement.value.days||1)
+  const modelName=quote.seriesFullName||quote.displayName||quote.groupName||'租车套餐'
+  const tags=String(quote.travelTags||quote.featureTags||'自动挡')
+    .split(/[,，]/)
+    .map(item=>item.trim())
+    .filter(Boolean)
+    .slice(0,3)
+  return {
+    id:String(quote.quoteId||quote.vehicleGroupId||index),
+    label:index===0?'推荐套餐':index===1?'经济优选':'舒适升级',
+    name:quote.groupName||quote.displayName||modelName,
+    subtitle:modelName,
+    seats:Number(quote.seats||quote.seatsMax||5),
+    luggage:Number(String(quote.recommendedLuggage||'2').match(/\d+/)?.[0]||2),
+    tags:tags.length?tags:['自动挡'],
+    pickup:rentalContext.value?.matchedStore?.displayName||quote.pickupPoiName||rentalContext.value?.arrivalPoint?.name||'到达点交车',
+    returnPlace:rentalContext.value?.matchedStore?.displayName||quote.returnPoiName||quote.pickupPoiName||'同城还车',
+    pickupTime:pickupTimeLabel(activeRequirement.value),
+    returnTime:returnTimeLabel(activeRequirement.value,dayCount),
+    totalPrice:yuan(quote.feeBreakdown?.totalPriceCent),
+    dayCount,
+    serviceTags:['送车接人','基础保障','免费取消'],
+    tone:quoteTone(index),
+    raw:quote,
+  }
+}
+
+const inferArrivalText=()=>{
+  const req=activeRequirement.value
+  const text=userInput.value
+  const station=text.match(/([\u4e00-\u9fa5A-Za-z0-9]+(?:东站|西站|南站|北站|站|机场|酒店|宾馆|民宿))/)
+  if(station)return station[1]
+  if(text.includes('机场')||text.includes('飞机')||text.includes('航班')||text.includes('飞'))return `${req.destination}机场`
+  if(text.includes('高铁')||text.includes('动车')||text.includes('火车')||text.includes('车站'))return `${req.destination}站`
+  return `${req.destination}站`
+}
+
+const inferArrivalMode=()=>{
+  const text=`${userInput.value} ${rentalContext.value?.arrivalPoint?.name||''}`
+  if(/机场|飞机|航班|落地|下飞机/.test(text))return '机场到达'
+  if(/高铁|动车|火车|车站|东站|西站|南站|北站|下车/.test(text))return '高铁/火车站到达'
+  if(/酒店|宾馆|民宿/.test(text))return '酒店/住宿点出发'
+  if(/地址|上门|送车/.test(text))return '指定地址交车'
+  return '还不确定'
+}
+
+const inferArrivalTimeRange=()=>{
+  const text=userInput.value
+  if(/凌晨|早上|上午/.test(text))return '上午到达'
+  if(/中午|午间/.test(text))return '中午到达'
+  if(/下午|傍晚/.test(text))return '下午到达'
+  if(/晚上|夜里|夜间/.test(text))return '晚上到达'
+  return '按到达时间安排'
+}
+
+const syncRentalDetailDefaults=()=>{
+  rentalTripForm.arrivalMode=inferArrivalMode()
+  rentalTripForm.arrivalTimeRange=inferArrivalTimeRange()
+  rentalTripForm.routeStructure=/多城|多个城市|串联|跨城|异地|环线/.test(userInput.value)?'多城市/跨城自驾':'城市及周边自驾'
+  rentalTripForm.dailyDrivingLimit=/少开|不要太累|父母|老人|亲子/.test(userInput.value)?'城市短途（单日累计约1-2小时）':'近郊自驾（单日累计约2-4小时）'
+  rentalTripForm.returnMode=/异地|跨城|多城市|多城/.test(userInput.value)?'异地还车':'同城还车'
+}
+
+const loadRentalContext=async()=>{
+  if(!ready.value||!activeRequirement.value.destination)return
+  quoteLoading.value=true
+  try{
+    const data=await rentalApi.previewContext({
+      requirement:activeRequirement.value,
+      arrivalText:inferArrivalText(),
+    })
+    rentalContext.value=data
+    if(result.value&&data.requirement)result.value={...result.value,requirement:data.requirement}
+    if(data.requirement)Object.assign(form,data.requirement)
+    syncRentalDetailDefaults()
+    const mapped=(data.quoteOptions||[]).map(quoteToView)
+    quoteOptions.value=mapped.length?mapped:fallbackQuoteOptions()
+    selectedQuoteId.value=quoteOptions.value[0]?.id||''
+    selectedBackendQuote.value=quoteOptions.value[0]?.raw||null
+  }catch(error){
+    rentalContext.value=null
+    quoteOptions.value=fallbackQuoteOptions()
+    selectedQuoteId.value=quoteOptions.value[0]?.id||''
+    selectedBackendQuote.value=quoteOptions.value[0]?.raw||null
+    ElMessage.warning(error instanceof Error?`租车套餐加载失败，先使用演示套餐：${error.message}`:'租车套餐加载失败，先使用演示套餐')
+  }finally{
+    quoteLoading.value=false
+  }
+}
+
+const enterQuoteSelect=async()=>{
+  step.value='QUOTE_SELECT'
+  await loadRentalContext()
+}
+
+const selectQuote=(id:string)=>{
+  selectedQuoteId.value=id
+  selectedBackendQuote.value=quoteOptions.value.find(item=>item.id===id)?.raw||null
+}
+
+const buildRentalTripContext=()=>({
+  arrivalPoint:rentalContext.value?.arrivalPoint,
+  matchedStore:rentalContext.value?.matchedStore,
+  pickupPlan:rentalContext.value?.pickupPlan,
+  arrivalMode:rentalTripForm.arrivalMode,
+  arrivalTimeRange:rentalTripForm.arrivalTimeRange,
+  routeStructure:rentalTripForm.routeStructure,
+  dailyDrivingLimit:rentalTripForm.dailyDrivingLimit,
+  returnMode:rentalTripForm.returnMode,
+  returnPoint:rentalContext.value?.arrivalPoint?.name,
+  withElderOrChildren:/父母|老人|亲子|孩子|小孩/.test(userInput.value),
+  luggageLevel:'普通行李',
 })
+
+const continueToRentalDetails=()=>{
+  if(!selectedQuote.value)return ElMessage.warning('先选择一个租车套餐')
+  step.value='RENTAL_DETAILS'
+  setTimeout(()=>document.querySelector('.rental-detail-step')?.scrollIntoView({behavior:'smooth',block:'start'}),60)
+}
+
+const startRentalTripBuilding=()=>{
+  if(!selectedQuote.value)return ElMessage.warning('先选择一个租车套餐')
+  startDayBuilding()
+}
 
 const applyExample=(value:string)=>{
   userInput.value=value
   if(value.includes('杭州')) form.destination='杭州'
   if(value.includes('成都')) form.destination='成都'
+  if(value.includes('重庆')) form.destination='重庆'
+  if(value.includes('苏州')) form.destination='苏州'
   if(value.includes('江浙沪')) form.destination='杭州'
+  if(value.includes('上海出发')) form.departure='上海'
+  if(value.includes('重庆出发')) form.departure='重庆'
+  if(value.includes('成都出发')) form.departure='成都'
   if(value.includes('自驾')&&!form.preferences.includes('自驾')) form.preferences.push('自驾')
+  for(const preference of preferenceOptions){
+    if(value.includes(preference.replace('体验',''))&&!form.preferences.includes(preference))form.preferences.push(preference)
+  }
+  if(/父母|老人/.test(value)&&!form.preferences.includes('轻松游'))form.preferences.push('轻松游')
   const daysText=value.match(/(\d+)\s*天/)
   if(daysText) form.days=Number(daysText[1])
+  const budgetText=value.match(/预算(?:在)?\s*(\d+)/)
+  if(budgetText)form.budget=Number(budgetText[1])
+  if(/父母|老人/.test(value))form.peopleCount=3
+  if(/1人|一个人|独自/.test(value))form.peopleCount=1
+  if(/2人|两人|情侣/.test(value))form.peopleCount=2
 }
 
 const fieldValue=(field:string)=>{
@@ -161,6 +317,7 @@ const analyze=async()=>{
   days.value=[]
   orderCreated.value=false
   paid.value=false
+  rentalOrderId.value=null
   try{
     const extraAnswers=Object.entries(followUpAnswers).filter(([,value])=>value.trim()).map(([field,value])=>`${field}：${value.trim()}`)
     const requirement=showForm.value?form:result.value?.requirement
@@ -175,7 +332,7 @@ const analyze=async()=>{
     }
     if(ready.value){
       if(hasRental.value){
-        step.value='QUOTE_SELECT'
+        await enterQuoteSelect()
       }else{
         await startDayBuilding()
       }
@@ -209,8 +366,12 @@ const chooseDestination=async(name:string)=>{
 
 const continueFromSummary=()=>{
   if(!ready.value)return
-  step.value=hasRental.value?'QUOTE_SELECT':'DAY_BUILDING'
-  if(!hasRental.value) startDayBuilding()
+  if(hasRental.value){
+    enterQuoteSelect()
+  }else{
+    step.value='DAY_BUILDING'
+    startDayBuilding()
+  }
 }
 
 const startDayBuilding=async()=>{
@@ -219,10 +380,11 @@ const startDayBuilding=async()=>{
   startGenerateTimer()
   step.value='DAY_BUILDING'
   try{
+    const extras=hasRental.value?{selectedQuote:selectedBackendQuote.value,rentalTripContext:buildRentalTripContext()}:undefined
     const data=await aiApi.generateStream(result.value.conversationId,result.value.requirement,event=>{
       if(event.label)generateProgressLabel.value=event.label
       if(typeof event.progress==='number')generateProgress.value=event.progress
-    })
+    },extras)
     assertFirstDayGenerated(data.tripPlan)
     generationSessionId.value=data.generationSessionId||''
     plan.value=data.tripPlan
@@ -327,33 +489,66 @@ const createOrder=async()=>{
   if(!plan.value||!result.value?.requirement)return
   saving.value=true
   try{
-    await tripApi.save({
-      title:plan.value.title,
-      departure:result.value.requirement.departure,
-      destination:plan.value.destination,
-      days:plan.value.days,
-      budget:plan.value.budgetSummary.total,
-      preferences:result.value.requirement.preferences,
-      summary:plan.value.summary,
-      coverUrl:coverForDestination(plan.value.destination),
-      requirementJson:result.value.requirement,
-      tripPlanJson:plan.value,
-      userId:1,
-      username:'sora',
-    })
+    if(hasRental.value&&selectedBackendQuote.value){
+      const response=await rentalApi.createOrder({
+        conversationId:result.value.conversationId,
+        requirement:result.value.requirement,
+        tripPlan:plan.value,
+        selectedQuote:selectedBackendQuote.value,
+        protectionPackageCode:'BASE',
+        protectionPackageName:'基础保障',
+        protectionFeeCent:0,
+        contactName:'user',
+        contactPhone:'13800000000',
+        remark:`${selectedQuote.value?.name||'租车套餐'} 自驾行程订单`,
+      })
+      rentalOrderId.value=response.id
+    }else{
+      await tripApi.save({
+        title:plan.value.title,
+        departure:result.value.requirement.departure,
+        destination:plan.value.destination,
+        days:plan.value.days,
+        budget:plan.value.budgetSummary.total,
+        preferences:result.value.requirement.preferences,
+        summary:plan.value.summary,
+        coverUrl:coverForDestination(plan.value.destination),
+        requirementJson:result.value.requirement,
+        tripPlanJson:plan.value,
+        userId:1,
+        username:'sora',
+      })
+    }
     orderCreated.value=true
     step.value='ORDER_CREATED'
-    ElMessage.success('行程已保存，订单已创建')
+    ElMessage.success(hasRental.value?'租车订单已创建':'行程已保存，订单已创建')
   }finally{
     saving.value=false
   }
 }
 
-const sandboxPay=()=>{
+const sandboxPay=async()=>{
   if(!orderCreated.value)return ElMessage.info('请先创建订单')
+  if(rentalOrderId.value){
+    const pay=await rentalApi.alipayPagePay(rentalOrderId.value)
+    const payWindow=window.open('', '_blank')
+    if(payWindow){
+      payWindow.document.open()
+      payWindow.document.write(pay.formHtml)
+      payWindow.document.close()
+    }else{
+      const container=document.createElement('div')
+      container.innerHTML=pay.formHtml
+      document.body.appendChild(container)
+      const formEl=container.querySelector('form') as HTMLFormElement|null
+      formEl?.submit()
+    }
+    ElMessage.success('已打开支付宝沙箱收银台')
+    return
+  }
   paid.value=true
   step.value='PAID'
-  ElMessage.success('支付确认完成，行程已进入待出行状态')
+  ElMessage.success(rentalOrderId.value?'租车订单支付确认完成':'支付确认完成，行程已进入待出行状态')
 }
 
 function coverForDestination(destination:string){
@@ -370,14 +565,17 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
   const byDay=new Map(tripPlan.dailyPlans.map(day=>[day.day,day]))
   return Array.from({length:requirement.days},(_,index)=>{
     const day=byDay.get(index+1)||emptyTripDay(index+1,requirement)
-    const activities=day.activities.length?day.activities:[]
+    const rawActivities=day.activities.length?day.activities:[]
+    const baseActivities=scheduleDayActivities(ensureRentalPickupActivities(rawActivities,day.day,rentalEnabled),day.day,rentalEnabled)
+    const activities=completeDailyLifeNodes(baseActivities,day,tripPlan,requirement,rentalEnabled)
     const route=activities.map(item=>item.title.split('→')[0].trim()).filter(Boolean).slice(0,5)
     const tickets=day.estimatedCost?.tickets??Math.max(0,activities.reduce((sum,item)=>sum+(item.cost||0),0)*requirement.peopleCount)
-    const foodCost=normalizeDailyFoodCost(day.estimatedCost?.food,requirement.peopleCount)
+    const foodCost=estimateFoodCost(activities,day.estimatedCost?.food,requirement.peopleCount)
+    const hotelCost=estimateHotelCost(activities,day,tripPlan,requirement)
     const traffic=day.estimatedCost?.transport??requirement.peopleCount*40
-    const other=0
+    const other=hotelCost
     const dayFood=Array.isArray(day.food)?day.food:[day.food].filter(Boolean)
-    const moments=activities.map((activity,activityIndex)=>buildMoment(`activity-${activityIndex}`,periodForIndex(activityIndex),timeForIndex(activityIndex),activity,image,['景点']))
+    const moments=activities.map((activity,activityIndex)=>buildMoment(`activity-${activityIndex}`,periodForIndex(activityIndex),timeForIndex(activityIndex),normalizeRentalActivity(activity,rentalEnabled),image,rentalMomentTags(activity)))
     const travelPace=paceLabel(day.intensity||requirement.pace)
     return {
       day:day.day,
@@ -395,7 +593,7 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
         food:foodCost,
         traffic,
         other,
-        total:tickets+foodCost+traffic,
+        total:tickets+foodCost+traffic+other,
         foodSource:day.estimatedCost?.foodSource,
         transportSource:day.estimatedCost?.transportSource,
         excludesUnknownItems:day.estimatedCost?.excludesUnknownItems,
@@ -410,6 +608,181 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
       ].filter(Boolean)).slice(0,3),
     }
   })
+}
+
+function completeDailyLifeNodes(activities:any[],day:any,tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean){
+  if(!activities.length)return activities
+  let result=[...activities]
+  const lunchArea=mealAreaNear(result,12*60,requirement.destination)
+  const dinnerArea=mealAreaNear(result,18*60,requirement.destination)
+  result=insertTimedNode(result,mealNode('LUNCH','午餐',12*60+10,lunchArea,requirement,rentalEnabled))
+  result=insertTimedNode(result,mealNode('DINNER','晚餐',18*60+10,dinnerArea,requirement,rentalEnabled))
+  result=insertTimedNode(result,hotelNode(result,day,tripPlan,requirement,rentalEnabled))
+  return result.sort((a,b)=>(normalizeClock(a.time)||0)-(normalizeClock(b.time)||0))
+}
+
+function insertTimedNode(activities:any[],node:any){
+  if(activities.some(activity=>activity.type===node.type))return activities
+  const nodeTime=normalizeClock(node.time)||0
+  const result=[...activities]
+  const index=result.findIndex(activity=>(normalizeClock(activity.time)||0)>nodeTime)
+  if(index<0)result.push(node)
+  else result.splice(index,0,node)
+  return result
+}
+
+function mealAreaNear(activities:any[],targetMinutes:number,destination:string){
+  const candidates=activities
+    .filter(activity=>!['RENTAL_PICKUP','RENTAL_RETURN','LUNCH','DINNER','HOTEL'].includes(activity.type))
+    .map(activity=>({activity,delta:Math.abs((normalizeClock(activity.time)||targetMinutes)-targetMinutes)}))
+    .sort((a,b)=>a.delta-b.delta)
+  const nearby=candidates[0]?.activity
+  return nearby?.businessArea||nearby?.area||nearby?.address||`${destination}核心商圈`
+}
+
+function mealNode(type:'LUNCH'|'DINNER',title:string,minutes:number,area:string,requirement:Requirement,rentalEnabled:boolean){
+  const perPerson=mealAverage(requirement.destination,type)
+  const people=Math.max(1,requirement.peopleCount||1)
+  return {
+    time:formatClock(minutes),
+    title,
+    description:`建议在${area}附近用餐，减少绕路，把用餐和下一段游玩顺路衔接。`,
+    reason:`按${title==='午餐'?'午饭':'晚饭'}饭点插入，推荐选择${area}附近餐厅；按大众点评 2025 必吃榜“近八成商户人均百元以下”的公开口径，演示按人均约 ¥${perPerson} 估算。`,
+    tags:[title,'餐饮'],
+    type,
+    suggestedDuration:type==='LUNCH'?'约60分钟':'约75分钟',
+    transportSuggestion:rentalEnabled?'建议优先选择有停车场或步行可达的餐厅。':'建议选择景点附近步行可达餐厅。',
+    area,
+    cost:perPerson*people,
+    costText:`餐饮预估 ¥${perPerson}/人`,
+  }
+}
+
+function hotelNode(activities:any[],day:any,tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean){
+  const scenic=activities.filter(activity=>!['RENTAL_PICKUP','RENTAL_RETURN','LUNCH','DINNER','HOTEL'].includes(activity.type))
+  const last=scenic[scenic.length-1]||activities[activities.length-1]
+  const area=last?.area||last?.businessArea||day.accommodation||tripPlan.accommodation||`${requirement.destination}核心城区`
+  const perRoom=hotelAverage(requirement.destination,requirement.peopleCount||1)
+  return {
+    time:'20:30',
+    title:'入住/休息',
+    description:`建议住在${area}附近，方便结束当天行程后停车、休息，并衔接第二天路线。`,
+    reason:`住宿点按最后一个景点附近推荐；参考公开酒店平台均价口径，演示按经济舒适/父母出游档约 ¥${perRoom}/晚/间估算。`,
+    tags:['住宿','休息'],
+    type:'HOTEL',
+    suggestedDuration:'夜间休息',
+    transportSuggestion:rentalEnabled?'建议选择带停车场或周边停车方便的酒店。':'建议选择交通便利、返程方便的住宿区域。',
+    area,
+    cost:perRoom,
+    costText:`住宿预估 ¥${perRoom}/晚`,
+  }
+}
+
+function mealAverage(destination:string,type:'LUNCH'|'DINNER'){
+  const table:Record<string,{lunch:number;dinner:number}>={
+    杭州:{lunch:45,dinner:65},
+    成都:{lunch:40,dinner:60},
+    重庆:{lunch:40,dinner:60},
+    苏州:{lunch:45,dinner:65},
+  }
+  const key=Object.keys(table).find(city=>destination.includes(city))
+  const fallback={lunch:45,dinner:65}
+  const item=key?table[key]:fallback
+  return type==='LUNCH'?item.lunch:item.dinner
+}
+
+function hotelAverage(destination:string,peopleCount:number){
+  const table:Record<string,number>={
+    杭州:380,
+    成都:320,
+    重庆:300,
+    苏州:380,
+  }
+  const key=Object.keys(table).find(city=>destination.includes(city))
+  const base=key?table[key]:340
+  const rooms=Math.max(1,Math.ceil(Math.max(1,peopleCount)/3))
+  return base*rooms
+}
+
+function estimateFoodCost(activities:any[],fallback:number|undefined,peopleCount:number){
+  const mealTotal=activities
+    .filter(activity=>['LUNCH','DINNER'].includes(activity.type))
+    .reduce((sum,activity)=>sum+Number(activity.cost||0),0)
+  return mealTotal||normalizeDailyFoodCost(fallback,peopleCount)
+}
+
+function estimateHotelCost(activities:any[],day:any,tripPlan:TripPlan,requirement:Requirement){
+  const hotelNodeCost=activities.find(activity=>activity.type==='HOTEL')?.cost
+  if(hotelNodeCost)return Number(hotelNodeCost)
+  return Number(day.estimatedCost?.hotel||tripPlan.budgetSummary?.hotel||hotelAverage(requirement.destination,requirement.peopleCount||1))
+}
+
+function ensureRentalPickupActivities(activities:any[],dayNo:number,rentalEnabled:boolean){
+  if(!rentalEnabled||dayNo!==1)return activities
+  if(activities.some(activity=>activity.type==='RENTAL_PICKUP'))return activities
+  const pickupPlan=rentalContext.value?.pickupPlan
+  const store=rentalContext.value?.matchedStore
+  const arrival=rentalContext.value?.arrivalPoint
+  return [{
+    time:'',
+    title:pickupPlan?.title || store?.displayName || '提车/交车',
+    description:pickupPlan?.displayText || '工作人员将在到达点附近完成送车、验车和交车，随后开始自驾行程。',
+    reason:pickupPlan?.displayText || '先完成租车交付，再进入当天自驾路线。',
+    tags:['接车','租车'],
+    type:'RENTAL_PICKUP',
+    suggestedDuration:'约30分钟',
+    transportSuggestion:'到达后在推荐取车点完成交车，无需再安排打车到门店。',
+    address:arrival?.name || store?.address,
+    area:store?.displayName,
+    lng:Number(store?.lng)||undefined,
+    lat:Number(store?.lat)||undefined,
+    cost:0,
+  },...activities]
+}
+
+function scheduleDayActivities(activities:any[],dayNo:number,rentalEnabled:boolean){
+  let cursor=dayStartMinutes(dayNo,rentalEnabled)
+  return activities.map((activity,index)=>{
+    const explicit=normalizeClock(activity.time||activity.startTime)
+    if(explicit!=null&&index===0)cursor=explicit
+    const scheduled={...activity,time:formatClock(cursor)}
+    const stay=durationToMinutes(activity.suggestedDuration||activity.suggestedDurationText)
+    const buffer=activity.type==='RENTAL_PICKUP'?20:(rentalEnabled?35:25)
+    cursor+=Math.max(30,stay)+buffer
+    return scheduled
+  })
+}
+
+function dayStartMinutes(dayNo:number,rentalEnabled:boolean){
+  if(!rentalEnabled||dayNo!==1)return 9*60+30
+  const range=rentalTripForm.arrivalTimeRange
+  if(range.includes('中午'))return 12*60+30
+  if(range.includes('下午'))return 14*60+30
+  if(range.includes('晚上'))return 18*60+30
+  return 9*60+30
+}
+
+function normalizeClock(value?:string){
+  const match=String(value||'').match(/(\d{1,2}):(\d{2})/)
+  if(!match)return null
+  return Number(match[1])*60+Number(match[2])
+}
+
+function formatClock(minutes:number){
+  const safe=((minutes%(24*60))+(24*60))%(24*60)
+  return `${String(Math.floor(safe/60)).padStart(2,'0')}:${String(safe%60).padStart(2,'0')}`
+}
+
+function normalizeRentalActivity(activity:any,rentalEnabled:boolean){
+  if(!rentalEnabled||!activity?.transportSuggestion)return activity
+  return {
+    ...activity,
+    transportSuggestion:String(activity.transportSuggestion)
+      .replace(/打车约\s*¥?\d+/g,'自驾能耗/停车成本以实际为准')
+      .replace(/建议打车衔接/g,'建议自驾衔接')
+      .replace(/短途打车/g,'短途自驾')
+      .replace(/步行或打车/g,'步行或自驾'),
+  }
 }
 
 async function ensureDayGenerated(index:number,forceRegenerate=false){
@@ -547,7 +920,14 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     averageCost:activity?.averageCost,
     businessArea:activity?.businessArea,
     imageUrls:activity?.imageUrls,
+    type:activity?.type,
   }
+}
+
+function rentalMomentTags(activity:any){
+  if(activity.type==='RENTAL_PICKUP')return ['接车','租车']
+  if(activity.type==='RENTAL_RETURN')return ['还车','租车']
+  return ['景点']
 }
 
 function normalizeDailyFoodCost(value:number|undefined,peopleCount:number){
@@ -561,6 +941,8 @@ function visitSummary(activity:any){
   const title=activity?.title||activity?.name||'这里'
   const tags=(activity?.tags||[]).join(' ')
   const type=String(activity?.type||tags)
+  if(activity?.type==='RENTAL_PICKUP')return activity?.description||'先在推荐取车点完成送车、验车和交车，再开始当天自驾路线。'
+  if(activity?.type==='RENTAL_RETURN')return activity?.description||'预留时间完成还车验车和交接，再衔接返程。'
   const duration=activity?.suggestedDuration||activity?.suggestedDurationText
   const stay=duration?`建议留${duration.replace(/^约/,'约')}，`:'建议放慢一点逛，'
   if(/博物|历史|文化/.test(`${title} ${type}`))return `${title}适合先看展陈和城市故事，${stay}重点看代表性展品和脉络，不用赶场。`
@@ -685,7 +1067,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
             <textarea
               v-model="userInput"
               maxlength="300"
-              placeholder="例如：带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算4000以内。"
+              placeholder="例如：带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算4000以内。"
             />
             <div class="hero-input-actions">
               <span>{{ userInput.length }}/300</span>
@@ -725,10 +1107,10 @@ function coordinateForPlace(title:string,destination:string,index:number){
           <span>选一个模板，马上替换输入内容</span>
         </div>
         <div class="inspiration-grid">
-          <button @click="applyExample('带父母去杭州玩3天，不要太累，喜欢自然风光和历史文化')"><span>父母慢游</span><b>松弛人文线</b><small>3-5天 · 少换乘</small></button>
-          <button @click="applyExample('想去成都玩4天，重点吃美食看夜景，节奏轻松一点')"><span>烟火气</span><b>城市夜色线</b><small>2-4天 · 美食优先</small></button>
-          <button @click="applyExample('想在城市里玩3天，喜欢美食、历史和夜景')"><span>城市印象</span><b>地标漫游线</b><small>2-4天 · 拍照友好</small></button>
-          <button @click="applyExample('亲子出游3天，想轻松、有趣、不要太赶')"><span>亲子时光</span><b>家庭舒适线</b><small>3-6天 · 留足休息</small></button>
+          <button @click="applyExample('上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')"><span>高铁到达</span><b>杭州父母慢游</b><small>东站取车 · 同城还车</small></button>
+          <button @click="applyExample('上海出发，飞到成都玩3天，成都双流机场下飞机，想租车自驾，喜欢自然风光、历史文化和美食，节奏轻松，预算在5000元以内。')"><span>机场落地</span><b>成都落地自驾</b><small>机场到达 · 近郊自驾</small></button>
+          <button @click="applyExample('重庆出发，去成都和都江堰玩4天，成都东站下车，想租车自驾，多城市串联，喜欢美食和历史文化，预算在6000元以内。')"><span>跨城测试</span><b>成都周边串联</b><small>多城市 · 异地还车</small></button>
+          <button @click="applyExample('上海出发，亲子去苏州玩2天，苏州站下车，想租车自驾，轻松一点，喜欢园林、古镇和本地美食，预算在3000元以内。')"><span>亲子短途</span><b>苏州周末自驾</b><small>车站到达 · 城市短途</small></button>
         </div>
       </section>
 
@@ -808,7 +1190,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
 
     <div class="container builder-container">
       <RequirementSummaryBar
-        v-if="ready&&(step==='ANALYZED'||step==='QUOTE_SELECT')"
+        v-if="ready&&(step==='ANALYZED'||step==='QUOTE_SELECT'||step==='RENTAL_DETAILS')"
         :requirement="activeRequirement"
         :route-mode="routeMode"
         :has-rental="hasRental"
@@ -820,9 +1202,78 @@ function coordinateForPlace(title:string,destination:string,index:number){
         v-if="step==='QUOTE_SELECT'"
         :quotes="quoteOptions"
         :selected-id="selectedQuoteId"
-        @select="selectedQuoteId=$event"
-        @continue="startDayBuilding"
+        :loading="quoteLoading"
+        :pickup-text="rentalContext?.pickupPlan?.displayText"
+        @select="selectQuote"
+        @continue="continueToRentalDetails"
       />
+
+      <section v-if="step==='RENTAL_DETAILS'" class="rental-detail-step builder-card">
+        <div class="rental-detail-head">
+          <div>
+            <span>SELF DRIVE DETAILS</span>
+            <h2>补充一点自驾信息</h2>
+            <p>回答这些内容，生成的自驾行程会更精准；不填也可以，PlanGo 会按轻松路线处理。</p>
+          </div>
+          <strong>{{ selectedQuote?.name }}</strong>
+        </div>
+        <div class="rental-detail-grid">
+          <label>
+            <span>到达方式</span>
+            <select v-model="rentalTripForm.arrivalMode">
+              <option>机场到达</option>
+              <option>高铁/火车站到达</option>
+              <option>酒店/住宿点出发</option>
+              <option>指定地址交车</option>
+              <option>还不确定</option>
+            </select>
+          </label>
+          <label>
+            <span>到达时间</span>
+            <select v-model="rentalTripForm.arrivalTimeRange">
+              <option>上午到达</option>
+              <option>中午到达</option>
+              <option>下午到达</option>
+              <option>晚上到达</option>
+              <option>按到达时间安排</option>
+            </select>
+          </label>
+          <label>
+            <span>游玩范围</span>
+            <select v-model="rentalTripForm.routeStructure">
+              <option>只玩本城</option>
+              <option>城市及周边自驾</option>
+              <option>多城市/跨城自驾</option>
+              <option>环线自驾后回到起点</option>
+              <option>还不确定</option>
+            </select>
+          </label>
+          <label>
+            <span>驾驶强度</span>
+            <select v-model="rentalTripForm.dailyDrivingLimit">
+              <option>城市短途（单日累计约1-2小时）</option>
+              <option>近郊自驾（单日累计约2-4小时）</option>
+              <option>跨城自驾（单日累计约4-6小时）</option>
+              <option>长途自驾（单日累计6小时以上）</option>
+            </select>
+          </label>
+          <label>
+            <span>还车方式</span>
+            <select v-model="rentalTripForm.returnMode">
+              <option>同城还车</option>
+              <option>异地还车</option>
+            </select>
+          </label>
+        </div>
+        <div class="rental-detail-pickup">
+          <b>附加服务</b>
+          <p>{{ rentalContext?.pickupPlan?.displayText || '将按你的到达点安排送车接人。' }}</p>
+        </div>
+        <footer>
+          <button class="secondary-action" @click="step='QUOTE_SELECT'">返回换套餐</button>
+          <button class="generate-day-btn" @click="startRentalTripBuilding">生成自驾行程</button>
+        </footer>
+      </section>
 
       <section v-if="generating" class="builder-loading builder-card">
         <span><el-icon><Loading class="is-loading"/></el-icon></span>
@@ -893,7 +1344,7 @@ function coordinateForPlace(title:string,destination:string,index:number){
 
       <FinalReviewPanel
         v-if="step==='FINAL_REVIEW'||step==='ORDER_CREATED'||step==='PAID'"
-        :data="{requirement:activeRequirement,days,selectedQuote:hasRental?selectedQuote:null,hotelCost:plan?.budgetSummary.hotel??null}"
+        :data="{requirement:activeRequirement,days,selectedQuote:hasRental?selectedQuote:null,rentalContext,rentalTripContext:hasRental?buildRentalTripContext():null,hotelCost:plan?.budgetSummary.hotel??null}"
         :saving="saving"
         :order-created="orderCreated"
         :paid="paid"
@@ -1382,6 +1833,8 @@ function coordinateForPlace(title:string,destination:string,index:number){
   color: #fff!important;
   font-weight: 900!important;
 }
+
+.rental-detail-step{margin-top:24px;padding:24px}.rental-detail-head{display:flex;justify-content:space-between;gap:18px;margin-bottom:18px}.rental-detail-head span{color:#2563eb;font-size:12px;font-weight:900}.rental-detail-head h2{margin:6px 0;color:#111827}.rental-detail-head p{margin:0;color:#64748b}.rental-detail-head strong{align-self:flex-start;border-radius:999px;background:#eff6ff;color:#1d4ed8;padding:8px 12px;white-space:nowrap}.rental-detail-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.rental-detail-grid label{display:grid;gap:7px}.rental-detail-grid span{color:#64748b;font-size:13px;font-weight:800}.rental-detail-grid select{width:100%;height:42px;border:1px solid #dbe7f0;border-radius:10px;background:#fff;color:#172033;padding:0 10px;outline:0}.rental-detail-pickup{margin-top:16px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff;padding:14px 16px}.rental-detail-pickup b{color:#172033}.rental-detail-pickup p{margin:6px 0 0;color:#64748b}.rental-detail-step footer{display:flex;justify-content:flex-end;gap:12px;margin-top:18px}.secondary-action{height:44px;border:1px solid #dbe7f0;border-radius:12px;background:#fff;color:#172033;padding:0 18px;font-weight:900;cursor:pointer}
 
 .product-hero {
   min-height: calc(100vh - 72px);

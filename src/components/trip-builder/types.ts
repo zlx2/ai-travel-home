@@ -1,6 +1,6 @@
 import type { Requirement } from '../../types'
 
-export type BuilderStep='INPUT'|'ANALYZED'|'QUOTE_SELECT'|'DAY_BUILDING'|'FINAL_REVIEW'|'ORDER_CREATED'|'PAID'
+export type BuilderStep='INPUT'|'ANALYZED'|'QUOTE_SELECT'|'RENTAL_DETAILS'|'DAY_BUILDING'|'FINAL_REVIEW'|'ORDER_CREATED'|'PAID'
 export type DayStatus='locked'|'active'|'draft'|'generating'|'pending'
 
 export interface RentalQuote{
@@ -19,6 +19,7 @@ export interface RentalQuote{
   dayCount:number
   serviceTags:string[]
   tone:'blue'|'teal'|'gold'
+  raw?:any
 }
 
 export interface DayMoment{
@@ -44,6 +45,7 @@ export interface DayMoment{
   averageCost?:number
   businessArea?:string
   imageUrls?:string[]
+  type?:string
 }
 
 export interface BuilderDay{
@@ -81,5 +83,7 @@ export interface FinalReviewData{
   requirement:Requirement
   days:BuilderDay[]
   selectedQuote?:RentalQuote|null
+  rentalContext?:any|null
+  rentalTripContext?:any|null
   hotelCost:number|null
 }

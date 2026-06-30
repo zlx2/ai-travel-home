@@ -1,5 +1,6 @@
 import type { Comment, Destination, Note, Requirement, Trip, TripPlan, UserInfo } from '../types'
 import { homeImage } from '../utils/homeImages'
+import { normalizeTripDays } from '../utils/tripLimits'
 
 export const USE_MOCK=import.meta.env.VITE_USE_MOCK!=='false'
 export const delay=(ms=350)=>new Promise(resolve=>setTimeout(resolve,ms))
@@ -26,10 +27,12 @@ export const users:UserInfo[]=[
   {id:2,username:'admin',nickname:'系统管理员',email:'admin@example.com',avatarUrl:'https://api.dicebear.com/9.x/adventurer/svg?seed=Admin',role:2,status:1,createTime:now},
   {id:3,username:'xiaoyu',nickname:'小鱼在旅行',email:'fish@example.com',avatarUrl:'https://api.dicebear.com/9.x/adventurer/svg?seed=Fish',role:1,status:1,createTime:now},
 ]
-export const buildPlan=(r:Requirement):TripPlan=>({
-  title:`${r.destination} ${r.days} 日${r.preferences.join('·')}之旅`,destination:r.destination,days:r.days,
-  summary:`用 ${r.days} 天感受${r.destination}的城市气质，在经典地标、地道美食和松弛体验之间取得平衡。`,
-  dailyPlans:Array.from({length:r.days},(_,i)=>({day:i+1,title:['初见城市·地标漫游','城市深处·人文美食','慢享时光·山水告别'][i]||`自在探索第 ${i+1} 天`,activities:[
+export const buildPlan=(r:Requirement):TripPlan=>{
+  const days=normalizeTripDays(r.days)
+  return {
+  title:`${r.destination} ${days} 日${r.preferences.join('·')}之旅`,destination:r.destination,days,
+  summary:`用 ${days} 天感受${r.destination}的城市气质，在经典地标、地道美食和松弛体验之间取得平衡。`,
+  dailyPlans:Array.from({length:days},(_,i)=>({day:i+1,title:['初见城市·地标漫游','城市深处·人文美食','慢享时光·山水告别'][i]||`自在探索第 ${i+1} 天`,activities:[
     {time:'09:30',title:['解放碑步行街','李子坝观景台','磁器口古镇'][i%3],description:'轻松抵达，预留充足游览和拍照时间。',tags:['城市地标','拍照'],cost:0},
     {time:'14:00',title:['山城巷','鹅岭二厂','长江索道'][i%3],description:'沿推荐路线感受城市肌理，途中安排休息。',tags:['人文','轻松'],cost:60},
     {time:'18:30',title:['洪崖洞夜景','南山一棵树','江畔夜游'][i%3],description:'享用当地美食后欣赏城市夜景。',tags:['美食','夜景'],cost:160},
@@ -37,7 +40,8 @@ export const buildPlan=(r:Requirement):TripPlan=>({
   accommodation:'建议住在解放碑附近，交通方便且夜间餐饮选择丰富。',
   budgetSummary:{transport:300,hotel:600,food:600,tickets:260,total:r.budget||1760},
   tips:['重庆多坡路，建议穿舒适防滑的鞋。','热门景点尽量错峰，索道可提前预约。','饮食偏辣，可提前告知店家调整辣度。']
-})
+  }
+}
 const seedReq:Requirement={departure:'上海',destination:'重庆',days:3,budget:2000,budgetType:'TOTAL',peopleCount:2,preferences:['美食','夜景'],pace:'LIGHT',avoidances:['不早起']}
 export const trips:Trip[]=[{id:1,userId:1,username:'sora',title:'重庆 3 日美食夜景游',destination:'重庆',days:3,budget:2000,preferences:['美食','夜景'],summary:'山城地标、地道美食与璀璨夜景一次收齐。',coverUrl:images[0],requirementJson:seedReq,tripPlanJson:buildPlan(seedReq),status:1,createTime:now}]
 export const notes:Note[]=[

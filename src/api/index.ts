@@ -3,10 +3,12 @@ import { USE_MOCK, comments, delay, destinations, notes, persist, tags, trips, u
 import { TOKEN_KEY } from '../utils/auth'
 import type { AnalyzeResult, Comment, GenerateProgressEvent, GenerateResult, Note, PageResult, RecommendationContext, Requirement, Trip, TripDay, TripPlan, UserInfo } from '../types'
 import { homeImage } from '../utils/homeImages'
+import { normalizeTripDays } from '../utils/tripLimits'
 const request:any=requestClient
 const AI_GENERATE_TIMEOUT_MS=240000
 const HOME_TIMEOUT_MS=3000
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
+const withNormalizedRequirementDays=(requirement:Requirement):Requirement=>({...requirement,days:normalizeTripDays(requirement.days)})
 
 const page=<T>(list:T[],pageNum=1,pageSize=10):PageResult<T>=>({list:list.slice((pageNum-1)*pageSize,pageNum*pageSize),total:list.length,pageNum,pageSize})
 const mockHome=()=>({hotDestinations:destinations.slice(0,6),hotNotes:notes.filter(n=>n.status===1).slice(0,3),hotTags:tags,recommendedTrips:[{destination:'重庆',days:3,preferences:['美食','夜景']},{destination:'成都',days:4,preferences:['美食','轻松游']},{destination:'西安',days:3,preferences:['历史文化','拍照打卡']},{destination:'厦门',days:3,preferences:['海岛','轻松游']}]})
@@ -21,16 +23,33 @@ export const authApi={
 }
 export const homeApi={async getHome(){if(!USE_MOCK){try{return await request.get('/home',{suppressError:true,timeout:HOME_TIMEOUT_MS})}catch{return mockHome()}}await delay();return mockHome()}}
 export const aiApi={
-  async analyze(payload:{conversationId?:string|null;userInput:string;extraAnswers?:string[];requirement?:Partial<Requirement>}):Promise<AnalyzeResult>{if(!USE_MOCK)return request.post('/ai/trips/analyze',payload);await delay(850);const text=[payload.userInput,...(payload.extraAnswers||[])].join(' ');const dest=payload.requirement?.destination||destinations.find(d=>text.includes(d.name))?.name||'';const departure=payload.requirement?.departure||text.match(/从([^去出发，, ]+)/)?.[1]||'';const days=Number(text.match(/(\d+)\s*天/)?.[1]||payload.requirement?.days||0);const questions=[];if(!departure)questions.push({field:'departure',question:'你准备从哪个城市出发？',required:true});if(!dest)questions.push({field:'destination',question:'你这次想去哪个目标城市？',required:true});if(!days)questions.push({field:'days',question:'这次旅行大概安排几天？',required:true});if(questions.length)return{conversationId:payload.conversationId||crypto.randomUUID(),status:'NEED_MORE_INFO',requirement:{...payload.requirement,departure,destination:dest,days} as Requirement,questions};const budget=Number(text.match(/预算\s*(\d+)/)?.[1]||payload.requirement?.budget||2000);const preferences=payload.requirement?.preferences?.length?payload.requirement.preferences:['美食','夜景'];return{conversationId:payload.conversationId||crypto.randomUUID(),status:'READY',requirement:{departure,destination:dest,days,budget,budgetType:'TOTAL',peopleCount:payload.requirement?.peopleCount||2,preferences,pace:payload.requirement?.pace||'LIGHT',avoidances:payload.requirement?.avoidances||['不早起'],travelDate:payload.requirement?.travelDate}}},
-  async generate(conversationId:string,requirement:Requirement,extras?:{selectedQuote?:any;rentalTripContext?:any}):Promise<GenerateResult>{if(!USE_MOCK){const data=await request.post('/ai/trips/generate',{conversationId,requirement,...extras},{timeout:AI_GENERATE_TIMEOUT_MS,suppressError:true});return normalizeGenerateResult(data)}await delay(1500);return{conversationId,requirement,recommendationContext:mockRecommendation(requirement),tripPlan:buildPlan(requirement)}},
+  async analyze(payload:{conversationId?:string|null;userInput:string;extraAnswers?:string[];requirement?:Partial<Requirement>}):Promise<AnalyzeResult>{
+    if(!USE_MOCK)return request.post('/ai/trips/analyze',payload)
+    await delay(850)
+    const text=[payload.userInput,...(payload.extraAnswers||[])].join(' ')
+    const dest=payload.requirement?.destination||destinations.find(d=>text.includes(d.name))?.name||''
+    const departure=payload.requirement?.departure||text.match(/从([^去出发，, ]+)/)?.[1]||''
+    const rawDays=Number(text.match(/(\d+)\s*天/)?.[1]||payload.requirement?.days||0)
+    const days=rawDays?normalizeTripDays(rawDays):0
+    const questions=[]
+    if(!departure)questions.push({field:'departure',question:'你准备从哪个城市出发？',required:true})
+    if(!dest)questions.push({field:'destination',question:'你这次想去哪个目标城市？',required:true})
+    if(!rawDays)questions.push({field:'days',question:'这次旅行大概安排几天？',required:true})
+    if(questions.length)return{conversationId:payload.conversationId||crypto.randomUUID(),status:'NEED_MORE_INFO',requirement:{...payload.requirement,departure,destination:dest,days} as Requirement,questions}
+    const budget=Number(text.match(/预算\s*(\d+)/)?.[1]||payload.requirement?.budget||2000)
+    const preferences=payload.requirement?.preferences?.length?payload.requirement.preferences:['美食','夜景']
+    return{conversationId:payload.conversationId||crypto.randomUUID(),status:'READY',requirement:{departure,destination:dest,days,budget,budgetType:'TOTAL',peopleCount:payload.requirement?.peopleCount||2,preferences,pace:payload.requirement?.pace||'LIGHT',avoidances:payload.requirement?.avoidances||['不早起'],travelDate:payload.requirement?.travelDate}}
+  },
+  async generate(conversationId:string,requirement:Requirement,extras?:{selectedQuote?:any;rentalTripContext?:any}):Promise<GenerateResult>{const safeRequirement=withNormalizedRequirementDays(requirement);if(!USE_MOCK){const data=await request.post('/ai/trips/generate',{conversationId,requirement:safeRequirement,...extras},{timeout:AI_GENERATE_TIMEOUT_MS,suppressError:true});return normalizeGenerateResult(data)}await delay(1500);return{conversationId,requirement:safeRequirement,recommendationContext:mockRecommendation(safeRequirement),tripPlan:buildPlan(safeRequirement)}},
   async generateDay(sessionId:string,dayNo:number,options?:{requestMode?:'USER'|'PREFETCH'|'ASYNC';forceRegenerate?:boolean;prefetchNext?:boolean;revisionText?:string}):Promise<TripDay>{if(USE_MOCK){await delay(900);return buildPlan({departure:'',destination:'杭州',days:dayNo,budget:0,budgetType:'TOTAL',peopleCount:2,preferences:[],pace:'LIGHT',avoidances:[]}).dailyPlans[dayNo-1]}const maxAttempts=60;for(let attempt=0;attempt<maxAttempts;attempt++){const data=await request.post(`/ai/trips/generate/session/${sessionId}/days/${dayNo}`,null,{params:{requestMode:options?.requestMode||'USER',forceRegenerate:attempt===0?options?.forceRegenerate??false:false,prefetchNext:attempt===0?options?.prefetchNext??true:false,revisionText:options?.revisionText||undefined},timeout:AI_GENERATE_TIMEOUT_MS,suppressError:true});if(data.status==='FAILED')throw new Error(data.errorMessage||`第 ${dayNo} 天生成失败`);if(data.resultJson){const dayJson=typeof data.resultJson==='string'?JSON.parse(data.resultJson):data.resultJson;const normalized=normalizeTripDay(dayJson,dayNo-1);return{...normalized,day:dayNo}}if(['QUEUED','GENERATING','PENDING'].includes(data.status)){if(attempt<maxAttempts-1){await sleep(2000);continue}break}if(data.status==='GENERATED')throw new Error(`第 ${dayNo} 天生成完成但没有返回结果`);if(attempt<maxAttempts-1){await sleep(2000);continue}}throw new Error(`第 ${dayNo} 天生成超时，请稍后重试`)},
   async generateStream(conversationId:string,requirement:Requirement,onProgress:(event:GenerateProgressEvent)=>void,extras?:{selectedQuote?:any;rentalTripContext?:any}):Promise<GenerateResult>{
+    const safeRequirement=withNormalizedRequirementDays(requirement)
     if(USE_MOCK){
       for(const label of ['正在规划每日主题','正在查询景点与路线数据','正在生成每日行程和推荐理由','正在合并最终行程']){
         onProgress({type:'progress',label})
         await delay(450)
       }
-      const result={conversationId,requirement,recommendationContext:mockRecommendation(requirement),tripPlan:buildPlan(requirement)}
+      const result={conversationId,requirement:safeRequirement,recommendationContext:mockRecommendation(safeRequirement),tripPlan:buildPlan(safeRequirement)}
       onProgress({type:'done',data:result})
       return result
     }
@@ -38,7 +57,7 @@ export const aiApi={
     const response=await fetch(`${import.meta.env.VITE_API_BASE_URL||'/api'}/ai/trips/generate/stream`,{
       method:'POST',
       headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},
-      body:JSON.stringify({conversationId,requirement,...extras}),
+      body:JSON.stringify({conversationId,requirement:safeRequirement,...extras}),
     })
     if(!response.ok||!response.body)throw new Error('无法连接行程生成进度流，请稍后重试')
     const reader=response.body.getReader()

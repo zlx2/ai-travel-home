@@ -12,6 +12,7 @@ import TripRouteMap, { type TripMapPlace } from '../../components/trip-builder/T
 import type { BuilderDay, BuilderStep, DayMoment, RentalQuote } from '../../components/trip-builder/types'
 import type { AnalyzeResult, RecommendationContext, Requirement, TripDay, TripPlan } from '../../types'
 import { homeImage } from '../../utils/homeImages'
+import { MAX_TRIP_DAYS, normalizeTripDays } from '../../utils/tripLimits'
 
 const route=useRoute()
 const userInput=ref('带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')
@@ -70,7 +71,7 @@ const preferenceOptions=['美食体验','夜景','历史文化','自然风光','
 onMounted(()=>{
   if(route.query.destination){
     form.destination=String(route.query.destination)
-    form.days=Number(route.query.days||3)
+    setFormDays(route.query.days||3)
     form.preferences=String(route.query.preferences||'').split(',').filter(Boolean)
     userInput.value=`我想去${form.destination}玩${form.days}天，喜欢${form.preferences.join('和')}，行程轻松一点`
     showForm.value=true
@@ -106,6 +107,26 @@ const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.
   lat:moment.lat,
   type:moment.type,
 })):[])
+
+const promptDaysValue=()=>Number(userInput.value.match(/(\d+)\s*天/)?.[1]||0)
+const showTripDaysLimitMessage=()=>ElMessage({
+  message:`我先帮你整理成 ${MAX_TRIP_DAYS} 天精华版，长线旅行可以保存后继续分段规划。`,
+  customClass:'trip-friendly-message',
+  duration:4200,
+})
+
+const setFormDays=(value:unknown)=>{
+  const original=Number(value)
+  form.days=normalizeTripDays(original, form.days||3)
+}
+
+const normalizeRequirementDays=(requirement:Partial<Requirement>)=>{
+  if(!requirement.days)return 0
+  const original=Number(requirement.days)
+  const days=normalizeTripDays(original)
+  requirement.days=days
+  return days
+}
 
 const updateRouteStats=(stats:{distanceKm:number;drivingMinutes:number})=>{
   const day=currentDay.value
@@ -284,7 +305,7 @@ const applyExample=(value:string)=>{
   }
   if(/父母|老人/.test(value)&&!form.preferences.includes('轻松游'))form.preferences.push('轻松游')
   const daysText=value.match(/(\d+)\s*天/)
-  if(daysText) form.days=Number(daysText[1])
+  if(daysText) setFormDays(daysText[1])
   const budgetText=value.match(/预算(?:在)?\s*(\d+)/)
   if(budgetText)form.budget=Number(budgetText[1])
   if(/父母|老人/.test(value))form.peopleCount=3
@@ -315,7 +336,7 @@ const answerOptions=(field:string)=>{
 
 const chooseFollowUpOption=(field:string,value:string)=>{
   updateFollowUpAnswer(field,value)
-  if(field==='days')form.days=Number(value.match(/\d+/)?.[0]||form.days)
+  if(field==='days')setFormDays(value.match(/\d+/)?.[0]||form.days)
   if(field==='peopleCount')form.peopleCount=Number(value.match(/\d+/)?.[0]||form.peopleCount)
   if(field==='destination')form.destination=value
   if(field==='departure')form.departure=value
@@ -334,8 +355,14 @@ const analyze=async()=>{
   try{
     const extraAnswers=Object.entries(followUpAnswers).filter(([,value])=>value.trim()).map(([field,value])=>`${field}：${value.trim()}`)
     const requirement=showForm.value?form:result.value?.requirement
+    const promptDays=promptDaysValue()
+    if(Number.isFinite(promptDays)&&promptDays>MAX_TRIP_DAYS)showTripDaysLimitMessage()
+    if(requirement)normalizeRequirementDays(requirement)
     result.value=await aiApi.analyze({conversationId:result.value?.conversationId,userInput:userInput.value,extraAnswers,requirement})
-    if(result.value.requirement)Object.assign(form,result.value.requirement)
+    if(result.value.requirement){
+      normalizeRequirementDays(result.value.requirement)
+      Object.assign(form,result.value.requirement)
+    }
     if(result.value.status==='NEED_MORE_INFO'){
       for(const question of result.value.questions||[]){
         if(!(question.field in followUpAnswers))followUpAnswers[question.field]=''
@@ -389,6 +416,7 @@ const continueFromSummary=()=>{
 
 const startDayBuilding=async()=>{
   if(!result.value?.requirement)return
+  normalizeRequirementDays(result.value.requirement)
   generating.value=true
   startGenerateTimer()
   step.value='DAY_BUILDING'
@@ -635,7 +663,8 @@ function coverForDestination(destination:string){
 function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean):BuilderDay[]{
   const image=coverForDestination(requirement.destination)
   const byDay=new Map(tripPlan.dailyPlans.map(day=>[day.day,day]))
-  const builtDays:BuilderDay[]=Array.from({length:requirement.days},(_,index)=>{
+  const dayCount=normalizeTripDays(requirement.days)
+  const builtDays:BuilderDay[]=Array.from({length:dayCount},(_,index)=>{
     const day=byDay.get(index+1)||emptyTripDay(index+1,requirement)
     const timeline=day.timeline?.length?day.timeline:[]
     const activities=timeline||[]
@@ -1562,6 +1591,23 @@ function timeForIndex(index:number){
 </template>
 
 <style scoped>
+:global(.trip-friendly-message) {
+  border: 1px solid rgba(14, 165, 166, .22)!important;
+  border-radius: 12px!important;
+  background: linear-gradient(135deg, #f0fdfa, #eff6ff)!important;
+  box-shadow: 0 14px 36px rgba(15, 118, 110, .12)!important;
+  color: #0f766e!important;
+}
+
+:global(.trip-friendly-message .el-message__content) {
+  color: #0f766e!important;
+  font-weight: 700;
+}
+
+:global(.trip-friendly-message .el-message__icon) {
+  color: #14b8a6!important;
+}
+
 .ai-workspace {
   min-height: calc(100vh - 72px);
   position: relative;
@@ -2049,12 +2095,9 @@ function timeForIndex(index:number){
   display: block;
   padding: 38px 24px 58px;
   background:
-    linear-gradient(90deg, rgba(15, 23, 42, .035) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(15, 23, 42, .035) 1px, transparent 1px),
-    radial-gradient(circle at 16% 16%, rgba(15, 159, 143, .14), transparent 28%),
-    radial-gradient(circle at 84% 18%, rgba(37, 99, 235, .14), transparent 30%),
-    linear-gradient(180deg,#f7fbff 0%,#eef4f7 100%);
-  background-size: 32px 32px,32px 32px,auto,auto,auto;
+    radial-gradient(circle at 14% 12%, rgba(15, 159, 143, .09), transparent 32%),
+    radial-gradient(circle at 86% 10%, rgba(37, 99, 235, .08), transparent 34%),
+    linear-gradient(180deg,#fbfdff 0%,#f5f8fb 58%,#f7fafc 100%);
   text-align: left;
 }
 
@@ -2076,7 +2119,7 @@ function timeForIndex(index:number){
   background:
     linear-gradient(180deg,rgba(255,255,255,.96),rgba(250,253,255,.92)),
     rgba(255,255,255,.94);
-  box-shadow: 0 28px 70px rgba(15,23,42,.12);
+  box-shadow: 0 22px 54px rgba(15,23,42,.09);
 }
 
 .studio-panel:before {
@@ -2085,8 +2128,8 @@ function timeForIndex(index:number){
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(90deg,rgba(15,159,143,.20),transparent 18%,transparent 82%,rgba(37,99,235,.18)),
-    linear-gradient(180deg,rgba(255,255,255,.68),transparent 36%);
+    linear-gradient(90deg,rgba(15,159,143,.10),transparent 20%,transparent 82%,rgba(37,99,235,.09)),
+    linear-gradient(180deg,rgba(255,255,255,.72),transparent 38%);
 }
 
 .studio-panel.analyzing:after {

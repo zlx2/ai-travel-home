@@ -398,6 +398,19 @@ function clearFollowUpAnswers(){
   for(const key of Object.keys(followUpAnswers))delete followUpAnswers[key]
 }
 
+const reopenPromptEditor=()=>{
+  result.value=null
+  plan.value=null
+  recommendation.value=null
+  days.value=[]
+  orderCreated.value=false
+  paid.value=false
+  rentalOrderId.value=null
+  clearFollowUpAnswers()
+  showForm.value=true
+  step.value='INPUT'
+}
+
 const chooseDestination=async(name:string)=>{
   form.destination=name
   userInput.value=`${userInput.value}，目的地选择${name}`
@@ -1348,61 +1361,79 @@ function timeForIndex(index:number){
     <section v-if="needsMoreInfo" class="followup-workspace product-followup">
       <div class="followup-top">
         <span>规划准备</span>
-        <h1>确认出发信息，马上生成第一天行程</h1>
-        <p>PlanGo 已经读懂你的旅行想法，只差少量会影响路线和交通的细节。</p>
+        <h1>确认出行基础信息，生成首日行程</h1>
+        <p>PlanGo 已经整理出旅行轮廓，只需要确认会影响路线、交通和节奏的关键细节。</p>
       </div>
 
-      <section class="planning-console">
+      <section class="planning-console" :class="{ processing: analyzing }">
         <header class="console-summary">
           <div>
             <span class="console-kicker">行程概要</span>
             <h2>{{ activeRequirement.destination || fieldValue('destination') || '目的地待确认' }} {{ activeRequirement.days || fieldValue('days') || 3 }} 日旅行</h2>
+            <p>回答越明确，第一天路线越贴近真实出行；不确定也可以交给 PlanGo 做轻松安排。</p>
           </div>
-          <button class="edit-summary-btn" @click="step='INPUT'">重新编辑</button>
+          <button class="edit-summary-btn" :disabled="analyzing" @click="reopenPromptEditor">重新编辑</button>
         </header>
 
-        <div class="summary-strip">
-          <div><span>目的地</span><b>{{ activeRequirement.destination || fieldValue('destination') || '待确认' }}</b></div>
-          <div><span>天数</span><b>{{ activeRequirement.days || fieldValue('days') || '待确认' }}</b></div>
-          <div><span>人数</span><b>{{ activeRequirement.peopleCount || fieldValue('peopleCount') || '待确认' }}</b></div>
-          <div><span>预算</span><b>{{ activeRequirement.budget ? `¥${activeRequirement.budget}以内` : fieldValue('budget') || '待确认' }}</b></div>
-          <div><span>节奏</span><b>{{ paceLabel(activeRequirement.pace || fieldValue('pace')) }}</b></div>
-          <div><span>偏好</span><b>{{ activeRequirement.preferences.join('、') || '待确认' }}</b></div>
-        </div>
+        <div class="followup-layout">
+          <div class="followup-main">
+            <div class="summary-strip">
+              <div><span>目的地</span><b>{{ activeRequirement.destination || fieldValue('destination') || '待确认' }}</b></div>
+              <div><span>天数</span><b>{{ activeRequirement.days || fieldValue('days') || '待确认' }}</b></div>
+              <div><span>人数</span><b>{{ activeRequirement.peopleCount || fieldValue('peopleCount') || '待确认' }}</b></div>
+              <div><span>预算</span><b>{{ activeRequirement.budget ? `¥${activeRequirement.budget}以内` : fieldValue('budget') || '待确认' }}</b></div>
+            </div>
 
-        <blockquote class="original-demand">{{ userInput }}</blockquote>
-
-        <div class="followup-task">
-          <div class="task-heading">
-            <span>{{ pendingQuestions.length }} 项待确认</span>
-            <h3>补齐后会直接进入 Day 01 行程</h3>
-          </div>
-          <div class="question-list">
-            <article v-for="(question,index) in pendingQuestions" :key="question.field">
-              <i>{{ index + 1 }}</i>
-              <h4>{{ question.question }}</h4>
-              <div>
-                <button
-                  v-for="option in answerOptions(question.field)"
-                  :key="option"
-                  :class="{ active: followUpAnswers[question.field]===option }"
-                  @click="chooseFollowUpOption(question.field, option)"
-                >
-                  {{ option }}
-                </button>
+            <div class="followup-task">
+              <div class="task-heading">
+                <span>{{ pendingQuestions.length }} 项待确认</span>
               </div>
-              <input
-                :value="followUpAnswers[question.field]"
-                placeholder="也可以直接输入"
-                @input="updateFollowUpAnswer(question.field, ($event.target as HTMLInputElement).value)"
-              >
-            </article>
+              <div class="question-list">
+                <article v-for="(question,index) in pendingQuestions" :key="question.field">
+                  <i>{{ index + 1 }}</i>
+                  <h4>{{ question.question }}</h4>
+                  <div>
+                    <button
+                      v-for="option in answerOptions(question.field)"
+                      :key="option"
+                      :class="{ active: followUpAnswers[question.field]===option }"
+                      :disabled="analyzing"
+                      @click="chooseFollowUpOption(question.field, option)"
+                    >
+                      {{ option }}
+                    </button>
+                  </div>
+                  <input
+                    :value="followUpAnswers[question.field]"
+                    :disabled="analyzing"
+                    placeholder="也可以直接输入，例如：上海虹桥站"
+                    @input="updateFollowUpAnswer(question.field, ($event.target as HTMLInputElement).value)"
+                  >
+                </article>
+              </div>
+            </div>
           </div>
+
+          <aside class="followup-side">
+            <div class="side-card ai-readiness">
+              <span>AI 已理解</span>
+              <b>{{ activeRequirement.preferences.join('、') || '偏好待确认' }}</b>
+              <p>{{ userInput }}</p>
+            </div>
+            <div class="side-card generation-steps">
+              <div :class="{ active: !analyzing }"><i></i><span>确认缺失信息</span></div>
+              <div :class="{ active: analyzing }"><i></i><span>整理路线约束</span></div>
+              <div :class="{ active: analyzing }"><i></i><span>生成首日行程草案</span></div>
+            </div>
+          </aside>
         </div>
 
         <footer class="console-actions">
-          <span>不确定的内容可以交给 PlanGo 按轻松路线处理。</span>
-          <button class="generate-day-btn" @click="submitFollowUp">确认并生成 Day 01</button>
+          <span>{{ analyzing ? 'PlanGo 正在整理你的补充信息，请稍等。' : '不确定的内容可以交给 PlanGo 按轻松路线处理。' }}</span>
+          <button class="generate-day-btn" :disabled="analyzing" @click="submitFollowUp">
+            <el-icon><Loading v-if="analyzing" class="is-loading"/><MagicStick v-else/></el-icon>
+            {{ analyzing ? '正在生成首日行程' : '确认并生成首日行程' }}
+          </button>
         </footer>
       </section>
     </section>
@@ -1606,6 +1637,15 @@ function timeForIndex(index:number){
 
 :global(.trip-friendly-message .el-message__icon) {
   color: #14b8a6!important;
+}
+
+:global(.is-loading) {
+  animation: spinLoading .9s linear infinite;
+  transform-origin: center;
+}
+
+:global(.is-loading svg) {
+  display: block;
 }
 
 .ai-workspace {
@@ -2590,6 +2630,10 @@ function timeForIndex(index:number){
   50% { box-shadow: 0 0 0 9px rgba(16,185,129,.18); transform: scale(1.16); }
 }
 
+@keyframes spinLoading {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes runningBar {
   0% { transform: translateX(-105%); }
   50% { transform: translateX(72%); }
@@ -2603,15 +2647,16 @@ function timeForIndex(index:number){
 
 .product-followup {
   min-height: calc(100vh - 72px);
-  padding: 38px 48px 56px;
+  padding: 34px 48px 56px;
   background:
-    radial-gradient(circle at 18% 18%, rgba(15,159,143,.08), transparent 30%),
-    linear-gradient(180deg,#f8fbff,#f4f7fb);
+    radial-gradient(circle at 16% 16%, rgba(15,159,143,.10), transparent 30%),
+    radial-gradient(circle at 88% 12%, rgba(37,99,235,.08), transparent 32%),
+    linear-gradient(180deg,#fbfdff,#f4f8fb);
 }
 
 .followup-top {
-  max-width: 1120px;
-  margin: 0 auto 18px;
+  max-width: 1220px;
+  margin: 0 auto 20px;
 }
 
 .followup-top span {
@@ -2624,7 +2669,8 @@ function timeForIndex(index:number){
 .followup-top h1 {
   margin: 8px 0 6px;
   color: #101827;
-  font-size: 32px;
+  font-size: 34px;
+  line-height: 1.16;
   letter-spacing: 0;
 }
 
@@ -2634,13 +2680,27 @@ function timeForIndex(index:number){
 }
 
 .planning-console {
-  max-width: 1120px;
+  position: relative;
+  overflow: hidden;
+  max-width: 1220px;
   margin: 0 auto;
   border: 1px solid #e5edf5;
   border-radius: 24px;
   background: rgba(255,255,255,.94);
   box-shadow: 0 22px 58px rgba(15,23,42,.08);
   padding: 26px;
+}
+
+.planning-console.processing:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg,#0f9f8f,#2563eb,#0f9f8f);
+  background-size: 180% 100%;
+  animation: followupSweep 1.3s ease-in-out infinite;
 }
 
 .console-summary {
@@ -2664,6 +2724,13 @@ function timeForIndex(index:number){
   letter-spacing: 0;
 }
 
+.console-summary p {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: #64748b;
+  line-height: 1.7;
+}
+
 .edit-summary-btn {
   height: 38px;
   border: 1px solid #dce6f0;
@@ -2675,18 +2742,36 @@ function timeForIndex(index:number){
   cursor: pointer;
 }
 
+.edit-summary-btn:hover:not(:disabled) {
+  border-color: #bdd7ec;
+  background: #f8fbff;
+  color: #2563eb;
+}
+
+.edit-summary-btn:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.followup-layout {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 320px;
+  gap: 18px;
+  margin-top: 22px;
+}
+
 .summary-strip {
   display: grid;
-  grid-template-columns: repeat(6,1fr);
+  grid-template-columns: repeat(4,1fr);
   gap: 10px;
-  margin: 22px 0 14px;
+  margin: 0 0 14px;
 }
 
 .summary-strip div {
   min-width: 0;
   border: 1px solid #edf2f7;
-  border-radius: 16px;
-  background: #fbfdff;
+  border-radius: 14px;
+  background: linear-gradient(180deg,#fff,#fbfdff);
   padding: 13px 14px;
 }
 
@@ -2720,17 +2805,15 @@ function timeForIndex(index:number){
 }
 
 .followup-task {
-  margin-top: 18px;
   border: 1px solid #e4edf6;
-  border-radius: 20px;
+  border-radius: 18px;
   background: linear-gradient(180deg,#fff,#fbfdff);
   padding: 20px;
 }
 
 .task-heading {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
+  align-items: center;
   gap: 16px;
   margin-bottom: 14px;
 }
@@ -2756,10 +2839,20 @@ function timeForIndex(index:number){
 }
 
 .product-followup .question-list article {
+  position: relative;
+  overflow: hidden;
   border-radius: 18px;
   border-color: #e6edf5;
-  background: #fff;
+  background: linear-gradient(180deg,#fff,#fcfeff);
   padding: 18px 18px 18px 46px;
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.product-followup .question-list article:focus-within,
+.product-followup .question-list article:hover {
+  border-color: rgba(15,159,143,.28);
+  box-shadow: 0 14px 34px rgba(15,23,42,.06);
+  transform: translateY(-1px);
 }
 
 .product-followup .question-list i {
@@ -2770,6 +2863,82 @@ function timeForIndex(index:number){
 .product-followup .question-list input {
   height: 42px;
   margin-top: 12px;
+}
+
+.product-followup .question-list input:disabled,
+.product-followup .question-list button:disabled {
+  cursor: not-allowed;
+  opacity: .72;
+}
+
+.followup-side {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.side-card {
+  border: 1px solid #e4edf6;
+  border-radius: 18px;
+  background: linear-gradient(180deg,#fff,#fbfdff);
+  padding: 18px;
+}
+
+.ai-readiness span {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ai-readiness b {
+  display: block;
+  margin-top: 8px;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.ai-readiness p {
+  margin: 12px 0 0;
+  border-radius: 12px;
+  background: #f7fafc;
+  color: #64748b;
+  padding: 12px;
+  line-height: 1.7;
+  font-size: 13px;
+}
+
+.generation-steps {
+  display: grid;
+  gap: 13px;
+}
+
+.generation-steps div {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 10px;
+  align-items: center;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.generation-steps i {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #cbd5e1;
+  border-radius: 50%;
+}
+
+.generation-steps div.active {
+  color: #0f766e;
+}
+
+.generation-steps div.active i {
+  border-color: #10b981;
+  background: #10b981;
+  box-shadow: 0 0 0 6px rgba(16,185,129,.10);
+  animation: statusPulse 1.2s ease-in-out infinite;
 }
 
 .console-actions {
@@ -2786,11 +2955,32 @@ function timeForIndex(index:number){
 }
 
 .product-followup .generate-day-btn {
-  width: 270px;
+  width: 286px;
   height: 50px;
   border-radius: 14px;
   margin-top: 0;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+.product-followup .generate-day-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(16,185,129,.22);
+}
+
+.product-followup .generate-day-btn:disabled {
+  cursor: wait;
+  filter: saturate(.92);
+  opacity: .9;
+}
+
+@keyframes followupSweep {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 180% 50%; }
 }
 
 @media (max-width: 1180px) {
@@ -2820,6 +3010,12 @@ function timeForIndex(index:number){
   }
   .studio-preview {
     min-height: 360px;
+  }
+  .followup-layout {
+    grid-template-columns: 1fr;
+  }
+  .summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

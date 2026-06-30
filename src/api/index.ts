@@ -10,11 +10,7 @@ const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 
 const page=<T>(list:T[],pageNum=1,pageSize=10):PageResult<T>=>({list:list.slice((pageNum-1)*pageSize,pageNum*pageSize),total:list.length,pageNum,pageSize})
 const mockHome=()=>({hotDestinations:destinations.slice(0,6),hotNotes:notes.filter(n=>n.status===1).slice(0,3),hotTags:tags,recommendedTrips:[{destination:'重庆',days:3,preferences:['美食','夜景']},{destination:'成都',days:4,preferences:['美食','轻松游']},{destination:'西安',days:3,preferences:['历史文化','拍照打卡']},{destination:'厦门',days:3,preferences:['海岛','轻松游']}]})
-export interface ConnectionCheckResult { message:string; receivedAction:string; receivedAt:string }
 export interface UserProfileStats { tripCount:number; noteCount:number; likeCount:number; favoriteCount:number }
-export const connectionApi={
-  check(action:string){return request.post('/debug/connect',{action}) as Promise<ConnectionCheckResult>},
-}
 export const authApi={
   login(payload:{account:string;password:string}){return request.post('/auth/login',payload) as Promise<{token:string;user:UserInfo}>},
   register(payload:{username:string;email:string;password:string;emailCode:string}){return request.post('/auth/register',payload) as Promise<{id:number}>},
@@ -71,7 +67,6 @@ export const aiApi={
     if(!result)throw new Error('行程生成结束但没有返回结果，请稍后重试')
     return result
   },
-  async chat(message:string,tripId:number){if(!USE_MOCK)return request.post('/ai/chat',{mode:'TRIP',tripId,message});await delay(650);return{conversationId:`trip-${tripId}`,reply:`结合当前行程，我建议：${message.includes('累')?'把第二天下午的两个景点合并，午后增加 1 小时休息，并优先选择轨道交通。':'保留核心体验，同时每天只安排 2—3 个重点地点，给交通和临时发现留出余量。'}`,suggestions:['帮我改得轻松一点','预算还能再低一点吗？','适合带父母去吗？']}},
 }
 function normalizeGenerateResult(data:any):GenerateResult{
   return{schemaVersion:data.schemaVersion,conversationId:data.conversationId,generationSessionId:data.generationSessionId||data.sessionId,requirement:data.requirement,recommendationContext:data.recommendationContext,tripPlan:normalizeTripPlan(data.tripPlan),dayStatuses:data.dayStatuses||[]}

@@ -1314,46 +1314,82 @@ function coordinateForPlace(title:string,destination:string,index:number){
 <template>
   <div class="ai-workspace" :class="{ 'planning-landing': landingMode }">
     <section v-if="landingMode" class="trip-hero product-hero">
-      <div class="hero-shell">
-        <div class="hero-panel">
-          <p class="hero-kicker">PlanGo AI Trip Studio</p>
-          <h1>把一句旅行想法，整理成可确认的每日行程</h1>
-          <p class="hero-lead">写下城市、天数、同行人、预算和偏好。PlanGo 会先理解需求，再逐日生成路线、景点、交通和花费参考。</p>
+      <div class="studio-shell">
+        <div class="studio-panel" :class="{ analyzing }">
+          <header class="studio-head">
+            <div>
+              <p class="hero-kicker">PLANGO AI TRIP STUDIO</p>
+              <h1>把一句旅行想法，整理成可确认的每日行程</h1>
+            </div>
+            <div class="studio-status">
+              <span></span>
+              <b>{{ analyzing ? 'AI 工作中' : 'Ready' }}</b>
+            </div>
+          </header>
+          <p class="hero-lead">像和旅行策划师聊天一样写下目的地、天数、同行人、预算和偏好，PlanGo 会把模糊想法拆成可调整的路线草案。</p>
 
           <div class="hero-input-shell">
+            <div class="prompt-toolbar">
+              <span>Prompt</span>
+              <span>智能识别目的地 / 天数 / 预算 / 偏好</span>
+            </div>
             <textarea
               v-model="userInput"
               maxlength="300"
-              placeholder="例如：带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算4000以内。"
+              placeholder="例如：带父母去杭州玩 3 天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算 4000 以内。"
             />
             <div class="hero-input-actions">
-              <span>{{ userInput.length }}/300</span>
-              <button :disabled="analyzing" @click="analyze">
+              <div class="input-hint">
+                <b>{{ userInput.length }}/300</b>
+                <span>描述越具体，AI 越容易一次理解</span>
+              </div>
+              <button type="button" :disabled="analyzing" @click="analyze">
                 <el-icon><Loading v-if="analyzing" class="is-loading"/><MagicStick v-else/></el-icon>
-                {{ analyzing ? '正在整理' : '开始规划' }}
+                {{ analyzing ? 'AI 正在理解需求' : '开始规划' }}
               </button>
             </div>
           </div>
 
           <div class="quick-fields">
-            <button><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
-            <button><b>天数</b><span>{{ form.days }} 天</span></button>
-            <button><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
-            <button><b>预算</b><span>¥{{ form.budget }} 内</span></button>
+            <button type="button"><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
+            <button type="button"><b>天数</b><span>{{ form.days }} 天</span></button>
+            <button type="button"><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
+            <button type="button"><b>预算</b><span>¥{{ form.budget }} 内</span></button>
+          </div>
+
+          <div v-if="analyzing" class="studio-running" aria-live="polite">
+            <div class="running-orbit">
+              <el-icon><MagicStick/></el-icon>
+            </div>
+            <div class="running-copy">
+              <b>正在拆解你的旅行需求</b>
+              <span>识别城市、天数、节奏和预算，准备进入下一步确认。</span>
+            </div>
+            <div class="running-steps">
+              <span class="active">理解输入</span>
+              <span>补全信息</span>
+              <span>生成路线</span>
+            </div>
+            <i></i>
           </div>
         </div>
 
-        <aside class="hero-preview">
+        <aside class="studio-preview">
           <img :src="homeImage('hangzhou.jpg', true)" alt="行程预览">
-          <div class="preview-card">
+          <div class="preview-topline">
+            <span>杭州</span>
+            <span>3 天</span>
             <span>示例行程</span>
+          </div>
+          <div class="preview-card">
+            <span>AI Preview</span>
             <b>杭州 3 日轻松慢游</b>
             <p>西湖漫步、历史街区、本地餐饮与舒适交通安排。</p>
           </div>
           <div class="preview-stats">
-            <div><small>节奏</small><b>轻松</b></div>
-            <div><small>确认方式</small><b>逐日确认</b></div>
-            <div><small>地图</small><b>路线联动</b></div>
+            <div><b>节奏轻松</b></div>
+            <div><b>逐日确认</b></div>
+            <div><b>路线联动</b></div>
           </div>
         </aside>
       </div>
@@ -2118,67 +2154,181 @@ function coordinateForPlace(title:string,destination:string,index:number){
 .product-hero {
   min-height: calc(100vh - 72px);
   display: block;
-  padding: 42px 24px 58px;
-  background: linear-gradient(180deg,#f8fbff 0%,#eef4f7 100%);
+  padding: 38px 24px 58px;
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, .035) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(15, 23, 42, .035) 1px, transparent 1px),
+    radial-gradient(circle at 16% 16%, rgba(15, 159, 143, .14), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(37, 99, 235, .14), transparent 30%),
+    linear-gradient(180deg,#f7fbff 0%,#eef4f7 100%);
+  background-size: 32px 32px,32px 32px,auto,auto,auto;
   text-align: left;
 }
 
-.hero-shell {
-  width: min(1280px, calc(100vw - 64px));
+.studio-shell {
+  width: min(1360px, calc(100vw - 64px));
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0,1.18fr) 390px;
-  gap: 28px;
+  grid-template-columns: minmax(0,1fr) 430px;
+  gap: 24px;
   align-items: stretch;
 }
 
-.hero-panel {
-  padding: 34px;
-  border: 1px solid #e3eaf2;
-  border-radius: 24px;
-  background: rgba(255,255,255,.88);
-  box-shadow: 0 22px 54px rgba(15,23,42,.08);
+.studio-panel {
+  position: relative;
+  overflow: hidden;
+  padding: 26px;
+  border: 1px solid rgba(203, 213, 225, .82);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.96),rgba(250,253,255,.92)),
+    rgba(255,255,255,.94);
+  box-shadow: 0 28px 70px rgba(15,23,42,.12);
+}
+
+.studio-panel:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg,rgba(15,159,143,.20),transparent 18%,transparent 82%,rgba(37,99,235,.18)),
+    linear-gradient(180deg,rgba(255,255,255,.68),transparent 36%);
+}
+
+.studio-panel.analyzing:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg,transparent 0%,rgba(37,99,235,.10) 42%,rgba(15,159,143,.18) 50%,rgba(37,99,235,.10) 58%,transparent 100%);
+  transform: translateX(-100%);
+  animation: studioScan 1.8s ease-in-out infinite;
+}
+
+.studio-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
 }
 
 .hero-kicker {
   margin: 0 0 12px;
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  border: 1px solid rgba(15, 159, 143, .18);
+  border-radius: 999px;
+  padding: 7px 11px;
   color: #0f766e;
+  background: rgba(236, 253, 245, .82);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 1.4px;
   text-transform: uppercase;
 }
 
-.hero-panel h1 {
+.studio-panel h1 {
   max-width: 760px;
   margin: 0;
-  color: #101827;
-  font-size: 38px;
-  line-height: 1.18;
+  color: #0f172a;
+  font-size: 46px;
+  line-height: 1.12;
   letter-spacing: 0;
 }
 
+.studio-status {
+  flex: 0 0 auto;
+  min-width: 92px;
+  height: 36px;
+  border: 1px solid rgba(15,159,143,.18);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #0f766e;
+  background: rgba(236,253,245,.76);
+  font-size: 12px;
+}
+
+.studio-status span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 5px rgba(16,185,129,.12);
+}
+
+.studio-panel.analyzing .studio-status span {
+  animation: statusPulse 1s ease-in-out infinite;
+}
+
 .hero-lead {
+  position: relative;
+  z-index: 1;
   max-width: 720px;
-  margin: 14px 0 24px;
-  color: #5f6f84;
+  margin: 14px 0 22px;
+  color: #64748b;
   font-size: 15px;
   line-height: 1.75;
 }
 
 .product-hero .hero-input-shell {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  min-height: 172px;
+  min-height: 214px;
   grid-template-columns: 1fr;
   padding: 16px;
+  border: 1px solid rgba(203,213,225,.92);
   border-radius: 18px;
-  box-shadow: inset 0 0 0 1px #dfe7f0,0 14px 30px rgba(15,23,42,.06);
+  background:
+    linear-gradient(180deg,#fff,#fbfdff);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.7),0 18px 42px rgba(15,23,42,.08);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.product-hero .hero-input-shell:focus-within {
+  border-color: rgba(37, 99, 235, .62);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, .10),0 18px 42px rgba(15,23,42,.10);
+  transform: translateY(-1px);
+}
+
+.prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.prompt-toolbar span:first-child {
+  color: #0f766e;
+  font-weight: 900;
+  letter-spacing: .8px;
+  text-transform: uppercase;
 }
 
 .product-hero .hero-input-shell textarea {
-  height: 100px;
-  padding: 4px;
+  height: 116px;
+  padding: 2px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  color: #172033;
+  background: transparent;
   font-size: 15px;
+  line-height: 1.72;
+}
+
+.product-hero .hero-input-shell textarea::placeholder {
+  color: #9aa8b8;
 }
 
 .hero-input-actions {
@@ -2187,22 +2337,81 @@ function coordinateForPlace(title:string,destination:string,index:number){
   justify-content: space-between;
   border-top: 1px solid #edf2f7;
   padding-top: 12px;
+  gap: 16px;
 }
 
-.hero-input-actions span {
+.input-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.input-hint b {
+  color: #334155;
+  font-size: 12px;
+}
+
+.input-hint span {
   color: #7b8798;
   font-size: 12px;
 }
 
 .hero-input-actions button {
-  min-width: 132px;
-  height: 42px;
+  position: relative;
+  overflow: hidden;
+  min-width: 182px;
+  height: 48px;
+  border: 0;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
+  background: linear-gradient(135deg,#0f9f8f,#2563eb);
+  box-shadow: 0 16px 32px rgba(37, 99, 235, .24);
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+.hero-input-actions button:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);
+  transform: translateX(-110%);
+  transition: transform .45s ease;
+}
+
+.hero-input-actions button:hover:not(:disabled):before,
+.hero-input-actions button:disabled:before {
+  transform: translateX(110%);
+}
+
+.hero-input-actions button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px rgba(37, 99, 235, .30);
+  filter: saturate(1.06);
+}
+
+.hero-input-actions button:active:not(:disabled) {
+  transform: translateY(0) scale(.97);
+}
+
+.hero-input-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .92;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, .20);
 }
 
 .product-hero .quick-fields {
+  position: relative;
+  z-index: 1;
   width: 100%;
   grid-template-columns: repeat(4,1fr);
-  margin-top: 18px;
+  margin-top: 14px;
   gap: 12px;
 }
 
@@ -2211,6 +2420,13 @@ function coordinateForPlace(title:string,destination:string,index:number){
   border-radius: 16px;
   background: #f8fafc;
   box-shadow: none;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.product-hero .quick-fields button:hover {
+  border-color: #cfe0ee;
+  background: #fff;
+  transform: translateY(-1px);
 }
 
 .product-hero .quick-fields b {
@@ -2224,17 +2440,102 @@ function coordinateForPlace(title:string,destination:string,index:number){
   font-weight: 900;
 }
 
-.hero-preview {
+.studio-running {
   position: relative;
-  overflow: hidden;
-  border-radius: 24px;
-  min-height: 418px;
-  color: #fff;
-  background: #10233f;
-  box-shadow: 0 22px 54px rgba(15,23,42,.14);
+  z-index: 1;
+  margin-top: 14px;
+  border: 1px solid rgba(37,99,235,.16);
+  border-radius: 18px;
+  display: grid;
+  grid-template-columns: 48px minmax(0,1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  background: linear-gradient(135deg,rgba(239,246,255,.95),rgba(236,253,245,.90));
+  box-shadow: 0 16px 36px rgba(37,99,235,.10);
 }
 
-.hero-preview img {
+.studio-running > i {
+  grid-column: 1/-1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(203,213,225,.75);
+}
+
+.studio-running > i:before {
+  content: "";
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg,#0f9f8f,#2563eb);
+  animation: runningBar 1.25s ease-in-out infinite;
+}
+
+.running-orbit {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg,#0f9f8f,#2563eb);
+  box-shadow: 0 14px 28px rgba(37,99,235,.22);
+  animation: floatPulse 1.4s ease-in-out infinite;
+}
+
+.running-copy b,
+.running-copy span {
+  display: block;
+}
+
+.running-copy b {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.running-copy span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.running-steps {
+  grid-column: 1/-1;
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 8px;
+}
+
+.running-steps span {
+  border-radius: 999px;
+  background: rgba(255,255,255,.74);
+  color: #64748b;
+  padding: 7px 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.running-steps span.active {
+  color: #0f766e;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(15,159,143,.12);
+}
+
+.studio-preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.70);
+  border-radius: 22px;
+  min-height: 504px;
+  color: #fff;
+  background: #10233f;
+  box-shadow: 0 28px 70px rgba(15,23,42,.18);
+}
+
+.studio-preview img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2243,11 +2544,38 @@ function coordinateForPlace(title:string,destination:string,index:number){
   filter: saturate(1.06);
 }
 
-.hero-preview:after {
+.studio-preview:after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg,rgba(8,17,32,.08),rgba(8,17,32,.74));
+  background:
+    linear-gradient(180deg,rgba(7,16,30,.22) 0%,rgba(7,16,30,.20) 34%,rgba(7,16,30,.88) 100%),
+    linear-gradient(90deg,rgba(7,16,30,.46),transparent 54%);
+}
+
+.preview-topline {
+  position: absolute;
+  z-index: 1;
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-topline span,
+.preview-card span {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255,255,255,.20);
+  border-radius: 999px;
+  background: rgba(255,255,255,.16);
+  backdrop-filter: blur(12px);
+  padding: 6px 10px;
+  color: rgba(255,255,255,.92);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .preview-card,
@@ -2259,14 +2587,20 @@ function coordinateForPlace(title:string,destination:string,index:number){
 }
 
 .preview-card { bottom: 94px; }
-.preview-card span { display:inline-flex;border-radius:999px;background:rgba(255,255,255,.18);padding:6px 10px;font-size:12px;font-weight:800; }
 .preview-card b { display:block;margin-top:10px;font-size:25px; }
 .preview-card p { margin:8px 0 0;color:rgba(255,255,255,.78);line-height:1.55; }
 .preview-stats { bottom:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px; }
-.preview-stats div { border-radius:14px;background:rgba(255,255,255,.14);padding:10px;backdrop-filter:blur(10px); }
-.preview-stats small,.preview-stats b { display:block; }
-.preview-stats small { color:rgba(255,255,255,.66);font-size:11px; }
-.preview-stats b { margin-top:4px;color:#fff;font-size:13px; }
+.preview-stats div {
+  min-height: 44px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,.14);
+  padding: 10px;
+  backdrop-filter: blur(10px);
+}
+.preview-stats b { color:#fff;font-size:13px; }
 
 .product-hero .inspiration-block {
   width: min(1280px, calc(100vw - 64px));
@@ -2283,9 +2617,53 @@ function coordinateForPlace(title:string,destination:string,index:number){
 .section-head h3 { margin:0;color:#172033; }
 .section-head span { color:#758195;font-size:13px; }
 .product-hero .inspiration-grid { grid-template-columns: repeat(4,1fr); }
-.product-hero .inspiration-grid button { height:132px;border-radius:18px;padding:16px;background:#fff;box-shadow:0 14px 34px rgba(15,23,42,.06); }
+.product-hero .inspiration-grid button {
+  position: relative;
+  overflow: hidden;
+  height:132px;
+  border-radius:18px;
+  padding:16px;
+  background:linear-gradient(180deg,#fff,#fbfdff);
+  box-shadow:0 14px 34px rgba(15,23,42,.07);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.product-hero .inspiration-grid button:hover {
+  border-color: rgba(37,99,235,.22);
+  transform: translateY(-5px);
+  box-shadow:0 24px 52px rgba(15,23,42,.13);
+}
+.product-hero .inspiration-grid button:active {
+  transform: translateY(-2px) scale(.99);
+}
+.product-hero .inspiration-grid span {
+  border: 1px solid rgba(15, 159, 143, .16);
+  background: linear-gradient(135deg,#ecfdf5,#eff6ff);
+  color: #0f766e;
+  box-shadow: 0 8px 18px rgba(15, 159, 143, .10);
+}
 .product-hero .inspiration-grid b { margin-top:28px;font-size:17px; }
 .product-hero .inspiration-grid small { font-size:12px; }
+
+@keyframes studioScan {
+  0% { transform: translateX(-110%); }
+  58%, 100% { transform: translateX(110%); }
+}
+
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 5px rgba(16,185,129,.12); transform: scale(1); }
+  50% { box-shadow: 0 0 0 9px rgba(16,185,129,.18); transform: scale(1.16); }
+}
+
+@keyframes runningBar {
+  0% { transform: translateX(-105%); }
+  50% { transform: translateX(72%); }
+  100% { transform: translateX(250%); }
+}
+
+@keyframes floatPulse {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-4deg); }
+}
 
 .product-followup {
   min-height: calc(100vh - 72px);
@@ -2501,6 +2879,12 @@ function coordinateForPlace(title:string,destination:string,index:number){
   .builder-main { grid-template-columns: 1fr; }
   .map-actions { grid-template-columns: 1fr; }
   .map-progress-dots i { width: 42px; }
+  .studio-shell {
+    grid-template-columns: 1fr;
+  }
+  .studio-preview {
+    min-height: 360px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2519,6 +2903,30 @@ function coordinateForPlace(title:string,destination:string,index:number){
 
   .hero-input-shell {
     grid-template-columns: 1fr;
+  }
+  .product-hero {
+    padding: 26px 16px 42px;
+  }
+  .studio-shell,
+  .product-hero .inspiration-block {
+    width: 100%;
+  }
+  .studio-panel {
+    padding: 24px;
+    border-radius: 20px;
+  }
+  .studio-panel h1 {
+    font-size: 31px;
+  }
+  .hero-input-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .input-hint {
+    justify-content: space-between;
+  }
+  .hero-input-actions button {
+    width: 100%;
   }
   .quick-fields,
   .inspiration-grid,

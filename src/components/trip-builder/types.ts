@@ -38,6 +38,7 @@ export interface DayMoment{
   reason?:string
   area?:string
   address?:string
+  city?:string
   lng?:number
   lat?:number
   openingHours?:string

@@ -44,7 +44,7 @@ const cleanOpeningHours=(value?:string)=>{
   if(!value)return ''
   return Array.from(new Set(value.split(/\s+/).map(item=>item.trim()).filter(Boolean))).join(' ')
 }
-const isFixedMoment=(moment:DayMoment)=>moment.type==='RENTAL_PICKUP'||moment.type==='HOTEL'||moment.type==='RENTAL_RETURN'
+const isFixedMoment=(moment:DayMoment)=>moment.type==='RENTAL_PICKUP'||moment.type==='INTERCITY_TRANSFER'||moment.type==='DAY_START_TRANSFER'||moment.type==='HOTEL'||moment.type==='RENTAL_RETURN'
 const onDragStart=(moment:DayMoment,event:DragEvent)=>{
   if(isFixedMoment(moment)){
     event.preventDefault()
@@ -121,7 +121,7 @@ const onDragEnd=()=>{ draggingKey.value=null }
           v-for="(moment,index) in day.moments"
           :key="moment.key"
           class="moment-row"
-          :class="{ expanded: expandedKey===moment.key, rental: moment.type==='RENTAL_PICKUP'||moment.type==='RENTAL_RETURN', meal: moment.type==='LUNCH'||moment.type==='DINNER', hotel: moment.type==='HOTEL', dragging: draggingKey===moment.key, fixed: isFixedMoment(moment) }"
+          :class="{ expanded: expandedKey===moment.key, rental: moment.type==='RENTAL_PICKUP'||moment.type==='RENTAL_RETURN'||moment.type==='INTERCITY_TRANSFER'||moment.type==='DAY_START_TRANSFER', meal: moment.type==='LUNCH'||moment.type==='DINNER', hotel: moment.type==='HOTEL', dragging: draggingKey===moment.key, fixed: isFixedMoment(moment) }"
           :draggable="!isFixedMoment(moment)"
           @dragstart="onDragStart(moment,$event)"
           @dragover="onDragOver(moment,$event)"

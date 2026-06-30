@@ -54,10 +54,10 @@ let routeLine:any=null
 
 const activePlace=computed(()=>props.places[activeIndex.value]||props.places[0])
 const markerTypeClass=(type?:string)=>{
-  if(['LUNCH','DINNER'].includes(String(type||'')))return 'meal'
-  if(['HOTEL','DAY_END'].includes(String(type||'')))return 'hotel'
-  if(['RENTAL_PICKUP','RENTAL_RETURN'].includes(String(type||'')))return 'rental'
-  if(['DAY_START','TRANSFER','INTERCITY_TRANSFER','DAY_START_TRANSFER'].includes(String(type||'')))return 'transfer'
+  if(['LUNCH_AREA','DINNER_AREA'].includes(String(type||'')))return 'meal'
+  if(['STAY_AREA'].includes(String(type||'')))return 'hotel'
+  if(['RENTAL_PICKUP','CAR_RETURN_SERVICE'].includes(String(type||'')))return 'rental'
+  if(['DAY_START','TRANSFER'].includes(String(type||'')))return 'transfer'
   return 'spot'
 }
 const markerHtml=(index:number,active:boolean,type?:string)=>`<div class="ai-route-marker ${markerTypeClass(type)} ${active?'active':''}"><span>${index+1}</span></div>`

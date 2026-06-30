@@ -51,7 +51,6 @@ const rentalTripForm=reactive({
 const reviseVisible=ref(false)
 const reviseText=ref('')
 const dayRevisionHints=reactive<Record<number,string[]>>({})
-const dayOrderDirty=reactive<Record<number,boolean>>({})
 const dayOrderIssues=reactive<Record<number,string[]>>({})
 
 const form=reactive<Requirement>({
@@ -96,7 +95,6 @@ const dayBusy=computed(()=>dayOverlayVisible.value||confirming.value||pendingDay
 const generationNoticeVisible=computed(()=>dayOverlayVisible.value||pendingDayNo.value!==null)
 const generationNoticeDay=computed(()=>pendingDayNo.value||currentDay.value?.day||1)
 const generationNoticeText=computed(()=>pendingDayNo.value?'正在生成下一天，当前已确认内容会保留。':'正在替换当前 Day，并避开已确认景点。')
-const currentOrderNeedsReview=computed(()=>!!currentDay.value&&(!!dayOrderDirty[currentDay.value.day]||!!dayOrderIssues[currentDay.value.day]?.length))
 const lockedCount=computed(()=>days.value.filter(day=>day.status==='locked').length)
 const progressStyle=computed(()=>({background:`conic-gradient(#10b981 ${Math.round((lockedCount.value/Math.max(days.value.length,1))*360)}deg,#e5eaf0 0deg)`}))
 const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.value.moments.filter((moment):moment is DayMoment&{lng:number;lat:number}=>hasMomentLocation(moment)).map((moment)=>({
@@ -538,7 +536,6 @@ const regenerateCurrentDay=async(revisionText='')=>{
   days.value[index]={...days.value[index],status:'generating'}
   try{
     await ensureDayGenerated(index,true,revisionText)
-    dayOrderDirty[days.value[index].day]=false
     dayOrderIssues[days.value[index].day]=[]
     ElMessage.success(`Day ${String(days.value[index].day).padStart(2,'0')} 已重新生成`)
   }catch(error){
@@ -563,28 +560,6 @@ const submitRevision=()=>{
   reviseVisible.value=false
   reviseText.value=''
   regenerateCurrentDay(revision)
-}
-
-const handleDayReorder=(moments:DayMoment[])=>{
-  if(!currentDay.value)return
-  const index=currentDayIndex.value
-  const dayNo=currentDay.value.day
-  days.value[index]={
-    ...currentDay.value,
-    moments,
-    route:moments.filter(item=>!isUtilityTimelineType(item.type)).map(item=>item.title).filter(Boolean).slice(0,6),
-    status:currentDay.value.status==='locked'?'active':currentDay.value.status,
-  }
-  dayOrderDirty[dayNo]=true
-  dayOrderIssues[dayNo]=[]
-  ElMessage.success('排序已调整，时间以原计划为准')
-}
-
-const checkCurrentOrder=()=>{
-  if(!currentDay.value)return
-  dayOrderDirty[currentDay.value.day]=false
-  dayOrderIssues[currentDay.value.day]=[]
-  ElMessage.success('已保留当前顺序，时间以原计划为准')
 }
 
 function detectRevisionConflict(text:string){
@@ -683,7 +658,7 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
     const activities=timeline||[]
     const route=activities.filter(item=>!isUtilityTimelineType(item.type)).map(item=>item.title.split('→')[0].trim()).filter(Boolean).slice(0,5)
     const tickets=day.estimatedCost?.tickets??Math.max(0,activities.filter(item=>!isUtilityTimelineType(item.type)).reduce((sum,item)=>sum+(item.cost||0),0)*requirement.peopleCount)
-    const foodCost=day.estimatedCost?.food??activities.filter(item=>['LUNCH','DINNER'].includes(String(item.type||''))).reduce((sum,item)=>sum+Number(item.cost||0),0)
+    const foodCost=day.estimatedCost?.food??activities.filter(item=>['LUNCH_AREA','DINNER_AREA'].includes(String(item.type||''))).reduce((sum,item)=>sum+Number(item.cost||0),0)
     const hotelCost=tripPlan.budgetSummary.hotel??0
     const traffic=day.estimatedCost?.transport??requirement.peopleCount*40
     const other=hotelCost
@@ -729,94 +704,7 @@ function createBuilderDays(tripPlan:TripPlan,requirement:Requirement,rentalEnabl
 }
 
 function isUtilityTimelineType(type?:string){
-  return ['RENTAL_PICKUP','RENTAL_RETURN','DAY_START','DAY_START_TRANSFER','INTERCITY_TRANSFER','TRANSFER','LUNCH','DINNER','HOTEL','DAY_END'].includes(String(type||''))
-}
-
-function ensureDayStartTransferMoments(days:BuilderDay[],tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean,image:string){
-  if(!rentalEnabled)return days
-  const sourceDays=new Map(tripPlan.dailyPlans.map(day=>[day.day,day]))
-  return days.map((day,index)=>{
-    if(index===0)return day
-    const previous=days[index-1]
-    const previousCity=normalizeCityName(sourceDays.get(previous.day)?.city||cityFromDay(previous,requirement))
-    const currentCity=normalizeCityName(sourceDays.get(day.day)?.city||cityFromDay(day,requirement))
-    const start=lastRouteMoment(previous)
-    const destination=firstRouteMoment(day.moments)
-    if(!start||!destination)return day
-    const crossCity=!!previousCity&&!!currentCity&&previousCity!==currentCity
-    const transfer:DayMoment={
-      key:`day-start-${previous.day}-${day.day}`,
-      period:'morning',
-      time:'08:30',
-      title:`${start.title} → ${destination.title} 路程`,
-      description:crossCity
-        ? `从前一天最后节点${start.title}出发，前往${currentCity}${destination.title}，作为换城市的第一段路程。`
-        : `从前一天住宿/最后节点${start.title}出发，前往今天首站${destination.title}，作为当天第一段路程。`,
-      tags:crossCity?['跨城路程','换城市','自驾']:['住宿出发','首段路程','自驾'],
-      cost:0,
-      image,
-      suggestedDuration:crossCity?'约2小时':'约45分钟',
-      transportSuggestion:'以昨天住宿/最后停留点为起点，实际耗时以当天高德实时路况为准。',
-      reason:crossCity
-        ? '跨城市不按瞬移处理，先完成上一城市行程，再在第二天早上前往下一城市首站。'
-        : '每天不是重新开局，次日路线以前一天住宿/最后停留点作为出发依据。',
-      area:start.area,
-      address:start.address,
-      city:sourceDays.get(previous.day)?.city||previousCity,
-      lng:start.lng,
-      lat:start.lat,
-      type:crossCity?'INTERCITY_TRANSFER':'DAY_START_TRANSFER',
-    }
-    const withoutOld=day.moments.filter(moment=>!['INTERCITY_TRANSFER','DAY_START_TRANSFER'].includes(String(moment.type||'')))
-    return {
-      ...day,
-      moments:rescheduleMomentList([transfer,...withoutOld]),
-      route:[transfer.title.split('→')[0].trim(),...day.route].filter(Boolean).slice(0,5),
-      tips:uniqueTips([`${crossCity?'跨城':'出发'}：从${start.title}前往${destination.title}`, ...day.tips]).slice(0,3),
-    }
-  })
-}
-
-function completeDailyLifeNodes(activities:any[],day:any,tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean){
-  if(!activities.length)return activities
-  let result=[...activities]
-  const lunchArea=mealAreaNear(result,12*60,requirement.destination)
-  const dinnerArea=mealAreaNear(result,18*60,requirement.destination)
-  result=insertTimedNode(result,mealNode('LUNCH','午餐',12*60+10,lunchArea,requirement,rentalEnabled))
-  result=insertTimedNode(result,mealNode('DINNER','晚餐',18*60+10,dinnerArea,requirement,rentalEnabled))
-  result=insertTimedNode(result,hotelNode(result,day,tripPlan,requirement,rentalEnabled))
-  return result.sort((a,b)=>activityOrder(a)-activityOrder(b))
-}
-
-function activityOrder(activity:any){
-  if(activity.type==='RENTAL_PICKUP')return -1
-  if(activity.type==='INTERCITY_TRANSFER'||activity.type==='DAY_START_TRANSFER')return -0.5
-  if(activity.type==='RENTAL_RETURN')return 24*60+2
-  return normalizeClock(activity.time)??24*60+1
-}
-
-function normalizeCityName(value?:string){
-  return String(value||'').replace(/市/g,'').replace(/\s+/g,'').trim()
-}
-
-function cityFromDay(day:BuilderDay,requirement:Requirement){
-  const momentCity=day.moments.find(moment=>moment.city)?.city
-  if(momentCity)return momentCity
-  const titleText=[day.title,day.subtitle,...day.moments.map(moment=>moment.title)].join(' ')
-  const routeCities=(requirement as any).routeCities as string[]|undefined
-  const candidates=routeCities?.length?routeCities:[requirement.destination]
-  return candidates.find(city=>titleText.includes(city))||requirement.destination
-}
-
-function lastRouteMoment(day:BuilderDay){
-  const candidates=day.moments.filter(hasMomentLocation)
-  return [...candidates].reverse().find(moment=>moment.type==='HOTEL')
-    || [...candidates].reverse().find(isPreviousDayAnchor)
-}
-
-function firstRouteMoment(moments:DayMoment[]){
-  return moments.find(moment=>hasMomentLocation(moment)&&!['RENTAL_PICKUP','INTERCITY_TRANSFER','DAY_START_TRANSFER','LUNCH','DINNER','HOTEL','RENTAL_RETURN'].includes(String(moment.type||'')))
-    || moments.find(moment=>hasMomentLocation(moment)&&!isRouteOnlyMoment(moment))
+  return ['RENTAL_PICKUP','CAR_RETURN_SERVICE','DAY_START','TRANSFER','LUNCH_AREA','DINNER_AREA','STAY_AREA'].includes(String(type||''))
 }
 
 function hasMomentLocation(moment:DayMoment){
@@ -824,180 +712,7 @@ function hasMomentLocation(moment:DayMoment){
 }
 
 function isRouteOnlyMoment(moment:{type?:string}){
-  return ['RENTAL_PICKUP','INTERCITY_TRANSFER','DAY_START_TRANSFER','RENTAL_RETURN'].includes(String(moment.type||''))
-}
-
-function isPreviousDayAnchor(moment:DayMoment){
-  return hasMomentLocation(moment)&&!['RENTAL_PICKUP','RENTAL_RETURN','INTERCITY_TRANSFER','DAY_START_TRANSFER','LUNCH','DINNER'].includes(String(moment.type||''))
-}
-
-function rescheduleMomentList(moments:DayMoment[]){
-  let cursor=normalizeClock(moments[0]?.time)||9*60+30
-  return moments.map((moment,index)=>{
-    const explicit=normalizeClock(moment.time)
-    const time=index===0&&explicit!=null?explicit:cursor
-    const next={...moment,time:formatClock(time)}
-    const stay=durationToMinutes(moment.suggestedDuration)
-    const buffer=moment.type==='RENTAL_PICKUP'||moment.type==='INTERCITY_TRANSFER'||moment.type==='DAY_START_TRANSFER'?20:35
-    cursor=time+Math.max(30,stay)+buffer
-    return next
-  })
-}
-
-function insertTimedNode(activities:any[],node:any){
-  if(activities.some(activity=>activity.type===node.type))return activities
-  const nodeTime=normalizeClock(node.time)||0
-  const result=[...activities]
-  const index=result.findIndex(activity=>(normalizeClock(activity.time)||0)>nodeTime)
-  if(index<0)result.push(node)
-  else result.splice(index,0,node)
-  return result
-}
-
-function mealAreaNear(activities:any[],targetMinutes:number,destination:string){
-  const candidates=activities
-    .filter(activity=>!['RENTAL_PICKUP','RENTAL_RETURN','INTERCITY_TRANSFER','DAY_START_TRANSFER','LUNCH','DINNER','HOTEL'].includes(activity.type))
-    .map(activity=>({activity,delta:Math.abs((normalizeClock(activity.time)||targetMinutes)-targetMinutes)}))
-    .sort((a,b)=>a.delta-b.delta)
-  const nearby=candidates[0]?.activity
-  return nearby?.businessArea||nearby?.area||nearby?.address||`${destination}核心商圈`
-}
-
-function mealNode(type:'LUNCH'|'DINNER',title:string,minutes:number,area:string,requirement:Requirement,rentalEnabled:boolean){
-  const perPerson=mealAverage(requirement.destination,type)
-  const people=Math.max(1,requirement.peopleCount||1)
-  return {
-    time:formatClock(minutes),
-    title,
-    description:`建议在${area}附近用餐，减少绕路，把用餐和下一段游玩顺路衔接。`,
-    reason:`按${title==='午餐'?'午饭':'晚饭'}饭点插入，推荐选择${area}附近餐厅；按大众点评 2025 必吃榜“近八成商户人均百元以下”的公开口径，演示按人均约 ¥${perPerson} 估算。`,
-    tags:[title,'餐饮'],
-    type,
-    suggestedDuration:type==='LUNCH'?'约60分钟':'约75分钟',
-    transportSuggestion:rentalEnabled?'建议优先选择有停车场或步行可达的餐厅。':'建议选择景点附近步行可达餐厅。',
-    area,
-    cost:perPerson*people,
-    costText:`餐饮预估 ¥${perPerson}/人`,
-  }
-}
-
-function hotelNode(activities:any[],day:any,tripPlan:TripPlan,requirement:Requirement,rentalEnabled:boolean){
-  const scenic=activities.filter(activity=>!['RENTAL_PICKUP','RENTAL_RETURN','INTERCITY_TRANSFER','DAY_START_TRANSFER','LUNCH','DINNER','HOTEL'].includes(activity.type))
-  const last=scenic[scenic.length-1]||activities[activities.length-1]
-  const area=last?.area||last?.businessArea||day.accommodation||tripPlan.accommodation||`${requirement.destination}核心城区`
-  const perRoom=hotelAverage(requirement.destination,requirement.peopleCount||1)
-  return {
-    time:'20:30',
-    title:'入住/休息',
-    description:`建议住在${area}附近，方便结束当天行程后停车、休息，并衔接第二天路线。`,
-    reason:`住宿点按最后一个景点附近推荐；参考公开酒店平台均价口径，演示按经济舒适/父母出游档约 ¥${perRoom}/晚/间估算。`,
-    tags:['住宿','休息'],
-    type:'HOTEL',
-    suggestedDuration:'夜间休息',
-    transportSuggestion:rentalEnabled?'建议选择带停车场或周边停车方便的酒店。':'建议选择交通便利、返程方便的住宿区域。',
-    area,
-    address:last?.address,
-    city:last?.city,
-    lng:last?.lng,
-    lat:last?.lat,
-    cost:perRoom,
-    costText:`住宿预估 ¥${perRoom}/晚`,
-  }
-}
-
-function mealAverage(destination:string,type:'LUNCH'|'DINNER'){
-  const table:Record<string,{lunch:number;dinner:number}>={
-    杭州:{lunch:45,dinner:65},
-    成都:{lunch:40,dinner:60},
-    重庆:{lunch:40,dinner:60},
-    苏州:{lunch:45,dinner:65},
-  }
-  const key=Object.keys(table).find(city=>destination.includes(city))
-  const fallback={lunch:45,dinner:65}
-  const item=key?table[key]:fallback
-  return type==='LUNCH'?item.lunch:item.dinner
-}
-
-function hotelAverage(destination:string,peopleCount:number){
-  const table:Record<string,number>={
-    杭州:380,
-    成都:320,
-    重庆:300,
-    苏州:380,
-  }
-  const key=Object.keys(table).find(city=>destination.includes(city))
-  const base=key?table[key]:340
-  const rooms=Math.max(1,Math.ceil(Math.max(1,peopleCount)/3))
-  return base*rooms
-}
-
-function estimateFoodCost(activities:any[],fallback:number|undefined,peopleCount:number){
-  const mealTotal=activities
-    .filter(activity=>['LUNCH','DINNER'].includes(activity.type))
-    .reduce((sum,activity)=>sum+Number(activity.cost||0),0)
-  return mealTotal||normalizeDailyFoodCost(fallback,peopleCount)
-}
-
-function estimateHotelCost(activities:any[],day:any,tripPlan:TripPlan,requirement:Requirement){
-  const hotelNodeCost=activities.find(activity=>activity.type==='HOTEL')?.cost
-  if(hotelNodeCost)return Number(hotelNodeCost)
-  return Number(day.estimatedCost?.hotel||tripPlan.budgetSummary?.hotel||hotelAverage(requirement.destination,requirement.peopleCount||1))
-}
-
-function ensureRentalPickupActivities(activities:any[],dayNo:number,rentalEnabled:boolean){
-  if(!rentalEnabled||dayNo!==1)return activities
-  if(activities.some(activity=>activity.type==='RENTAL_PICKUP'))return activities
-  const pickupPlan=rentalContext.value?.pickupPlan
-  const store=rentalContext.value?.matchedStore
-  const arrival=rentalContext.value?.arrivalPoint
-  return [{
-    time:'',
-    title:pickupPlan?.title || store?.displayName || '提车/交车',
-    description:pickupPlan?.displayText || '工作人员将在到达点附近完成送车、验车和交车，随后开始自驾行程。',
-    reason:pickupPlan?.displayText || '先完成租车交付，再进入当天自驾路线。',
-    tags:['接车','租车'],
-    type:'RENTAL_PICKUP',
-    suggestedDuration:'约30分钟',
-    transportSuggestion:'到达后在推荐取车点完成交车，无需再安排打车到门店。',
-    address:arrival?.name || store?.address,
-    area:store?.displayName,
-    lng:Number(store?.lng)||undefined,
-    lat:Number(store?.lat)||undefined,
-    cost:0,
-  },...activities]
-}
-
-function scheduleDayActivities(activities:any[],dayNo:number,rentalEnabled:boolean){
-  let cursor=dayStartMinutes(dayNo,rentalEnabled)
-  return activities.map((activity,index)=>{
-    const explicit=normalizeClock(activity.time||activity.startTime)
-    if(explicit!=null&&index===0)cursor=explicit
-    const scheduled={...activity,time:formatClock(cursor)}
-    const stay=durationToMinutes(activity.suggestedDuration||activity.suggestedDurationText)
-    const buffer=activity.type==='RENTAL_PICKUP'?20:(rentalEnabled?35:25)
-    cursor+=Math.max(30,stay)+buffer
-    return scheduled
-  })
-}
-
-function dayStartMinutes(dayNo:number,rentalEnabled:boolean){
-  if(!rentalEnabled||dayNo!==1)return 9*60+30
-  const range=rentalTripForm.arrivalTimeRange
-  if(range.includes('中午'))return 12*60+30
-  if(range.includes('下午'))return 14*60+30
-  if(range.includes('晚上'))return 18*60+30
-  return 9*60+30
-}
-
-function normalizeClock(value?:string){
-  const match=String(value||'').match(/(\d{1,2}):(\d{2})/)
-  if(!match)return null
-  return Number(match[1])*60+Number(match[2])
-}
-
-function formatClock(minutes:number){
-  const safe=((minutes%(24*60))+(24*60))%(24*60)
-  return `${String(Math.floor(safe/60)).padStart(2,'0')}:${String(safe%60).padStart(2,'0')}`
+  return ['RENTAL_PICKUP','CAR_RETURN_SERVICE','TRANSFER'].includes(String(moment.type||''))
 }
 
 function normalizeRentalActivity(activity:any,rentalEnabled:boolean){
@@ -1156,9 +871,9 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
 
 function rentalMomentTags(activity:any){
   if(activity.type==='RENTAL_PICKUP')return ['接车','租车']
-  if(activity.type==='INTERCITY_TRANSFER')return ['跨城路程','换城市']
-  if(activity.type==='DAY_START_TRANSFER')return ['住宿出发','首段路程']
-  if(activity.type==='RENTAL_RETURN')return ['还车','租车']
+  if(activity.type==='TRANSFER')return ['路程','自驾']
+  if(activity.type==='DAY_START')return ['从酒店出发','出发']
+  if(activity.type==='CAR_RETURN_SERVICE')return ['上门取车','租车']
   return ['景点']
 }
 
@@ -1176,12 +891,12 @@ function visitSummary(activity:any){
   const tags=(activity?.tags||[]).join(' ')
   const type=String(activity?.type||tags)
   if(activity?.type==='DAY_START')return '从酒店出发。'
-  if(activity?.type==='TRANSFER'||activity?.type==='INTERCITY_TRANSFER'||activity?.type==='DAY_START_TRANSFER')return '前往下一站。'
+  if(activity?.type==='TRANSFER')return '前往下一站。'
   if(activity?.type==='RENTAL_PICKUP')return '完成验车后开始行程。'
-  if(activity?.type==='RENTAL_RETURN')return '预留验车和交接时间。'
-  if(activity?.type==='LUNCH')return '午餐时间。'
-  if(activity?.type==='DINNER')return '晚餐时间。'
-  if(activity?.type==='HOTEL')return '回酒店休息。'
+  if(activity?.type==='CAR_RETURN_SERVICE')return '工作人员将在住宿区域附近上门取车。'
+  if(activity?.type==='LUNCH_AREA')return '午餐区域。'
+  if(activity?.type==='DINNER_AREA')return '晚餐区域。'
+  if(activity?.type==='STAY_AREA')return '住宿区域。'
   const duration=activity?.suggestedDuration||activity?.suggestedDurationText
   const stay=duration?`建议留${duration.replace(/^约/,'约')}，`:'建议放慢一点逛，'
   if(/博物|历史|文化/.test(`${title} ${type}`))return `${title}适合先看展陈和城市故事，${stay}重点看代表性展品和脉络，不用赶场。`
@@ -1564,14 +1279,13 @@ function timeForIndex(index:number){
             :day="currentDay"
             :selected-quote="hasRental ? selectedQuote : null"
             :confirming="confirming"
-            @reorder="handleDayReorder"
           />
           <div class="map-workbench">
             <TripRouteMap :places="currentMapPlaces" :tip="currentDay.tips[1]" @route-stats="updateRouteStats"/>
             <section class="map-control-panel builder-card">
-              <div v-if="dayOrderDirty[currentDay.day] || dayOrderIssues[currentDay.day]?.length" class="manual-order-alert" :class="{ conflict: dayOrderIssues[currentDay.day]?.length }">
-                <b>{{ dayOrderIssues[currentDay.day]?.length ? '排序需要核查' : '路线顺序已手动调整' }}</b>
-                <span>{{ dayOrderIssues[currentDay.day]?.[0] || '地图按当前顺序展示，节点时间以后端计划为准。' }}</span>
+              <div v-if="dayOrderIssues[currentDay.day]?.length" class="manual-order-alert conflict">
+                <b>修改要求需要核查</b>
+                <span>{{ dayOrderIssues[currentDay.day]?.[0] }}</span>
               </div>
               <div class="map-progress-dots" aria-label="行程进度">
                 <template v-for="(day,index) in days" :key="day.day">
@@ -1587,10 +1301,6 @@ function timeForIndex(index:number){
                 <button :disabled="dayBusy" @click="reviseVisible=true">
                   <b>修改偏好</b>
                   <small>景点 / 餐饮 / 节奏</small>
-                </button>
-                <button v-if="currentOrderNeedsReview" :disabled="dayBusy" :class="{ active: dayOrderDirty[currentDay.day] }" @click="checkCurrentOrder">
-                  <b>确认顺序</b>
-                  <small>保留当前顺序</small>
                 </button>
                 <el-button class="confirm-btn" type="primary" :disabled="dayBusy" :loading="confirming" @click="confirmCurrentDay">确认 Day {{ String(currentDay.day).padStart(2,'0') }}</el-button>
               </div>

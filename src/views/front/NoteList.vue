@@ -14,6 +14,7 @@ const items = ref<Note[]>([])
 const tagList = ref<any[]>([])
 const total = ref(0)
 const tab = ref<'discover' | 'mine'>('discover')
+const unmatchedTagName = ref('')
 
 const params = reactive({ pageNum: 1, pageSize: 9, keyword: '', tagId: 0, sort: 'latest' })
 const mineParams = reactive({ pageNum: 1, pageSize: 9, status: undefined as number | undefined })
@@ -21,6 +22,11 @@ const mineParams = reactive({ pageNum: 1, pageSize: 9, status: undefined as numb
 const curPage = (t: 'discover' | 'mine') => (t === 'discover' ? params.pageNum : mineParams.pageNum)
 
 const load = async () => {
+  if (tab.value === 'discover' && unmatchedTagName.value) {
+    items.value = []
+    total.value = 0
+    return
+  }
   loading.value = true
   try {
     if (tab.value === 'discover') {
@@ -42,7 +48,7 @@ const onPageChange = (p: number) => {
   load()
 }
 
-const chooseTag = (id: number) => { params.tagId = id; params.pageNum = 1; load() }
+const chooseTag = (id: number) => { unmatchedTagName.value = ''; params.tagId = id; params.pageNum = 1; load() }
 const chooseStatus = (s: number | undefined) => { mineParams.status = s; mineParams.pageNum = 1; load() }
 
 const switchTab = (t: 'discover' | 'mine') => {
@@ -60,12 +66,19 @@ const statusText = (s: number) => (s === 0 ? '草稿' : s === 1 ? '已发布' : 
 
 const handleTagParam = async () => {
   const tagName = route.query.tag ? decodeURIComponent(String(route.query.tag)) : ''
+  unmatchedTagName.value = ''
   if (!tagName || !tagList.value.length) return
   const matchedTag = tagList.value.find(t => t.name === tagName)
   if (matchedTag) {
     params.tagId = matchedTag.id
     params.pageNum = 1
     load()
+  } else {
+    unmatchedTagName.value = tagName
+    params.tagId = -1
+    params.pageNum = 1
+    items.value = []
+    total.value = 0
   }
 }
 
@@ -78,8 +91,10 @@ onMounted(async () => {
 })
 
 watch(() => route.query.tag, () => {
+  unmatchedTagName.value = ''
   params.tagId = 0
   handleTagParam()
+  if (!route.query.tag) load()
 })
 </script>
 
@@ -154,7 +169,7 @@ watch(() => route.query.tag, () => {
         </article>
       </div>
       <div v-else class="empty-wrap card">
-        <el-empty :description="tab === 'discover' ? '暂无符合条件的游记' : '还没有写过游记，快去发布一篇吧'">
+        <el-empty :description="unmatchedTagName ? `暂无“${unmatchedTagName}”标签，请先在后台标签表中维护` : (tab === 'discover' ? '暂无符合条件的游记' : '还没有写过游记，快去发布一篇吧')">
           <el-button v-if="tab === 'mine'" type="primary" @click="router.push('/notes/create')">写一篇游记</el-button>
         </el-empty>
       </div>

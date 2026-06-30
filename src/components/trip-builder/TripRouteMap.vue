@@ -8,6 +8,7 @@ export interface TripMapPlace {
   desc: string
   lng: number
   lat: number
+  type?: string
 }
 
 interface NearbyPoi {
@@ -52,7 +53,14 @@ let poiMarkers:any[]=[]
 let routeLine:any=null
 
 const activePlace=computed(()=>props.places[activeIndex.value]||props.places[0])
-const markerHtml=(index:number,active:boolean)=>`<div class="ai-route-marker ${active?'active':''}"><span>${index+1}</span></div>`
+const markerTypeClass=(type?:string)=>{
+  if(['LUNCH','DINNER'].includes(String(type||'')))return 'meal'
+  if(['HOTEL','DAY_END'].includes(String(type||'')))return 'hotel'
+  if(['RENTAL_PICKUP','RENTAL_RETURN'].includes(String(type||'')))return 'rental'
+  if(['DAY_START','TRANSFER','INTERCITY_TRANSFER','DAY_START_TRANSFER'].includes(String(type||'')))return 'transfer'
+  return 'spot'
+}
+const markerHtml=(index:number,active:boolean,type?:string)=>`<div class="ai-route-marker ${markerTypeClass(type)} ${active?'active':''}"><span>${index+1}</span></div>`
 const poiMarkerHtml=(type:NearbyType,index:number)=>`<div class="ai-poi-marker ${type}"><span>${index+1}</span></div>`
 const infoHtml=(place:TripMapPlace,index:number)=>`<div class="ai-map-info"><strong>${index+1}. ${place.title}</strong><span>${place.time}</span><p>${place.desc}</p></div>`
 const poiInfoHtml=(poi:NearbyPoi,type:NearbyType)=>`<div class="ai-map-info"><strong>${nearbyLabels[type]}：${poi.name}</strong><span>${poi.distance?`${poi.distance} 米`:'距离未知'}</span><p>${poi.address||'暂无地址'}</p></div>`
@@ -82,7 +90,7 @@ const clearMap=()=>{
 }
 
 const refreshMarkerState=()=>{
-  markers.forEach((marker,index)=>marker.setContent(markerHtml(index,activeIndex.value===index)))
+  markers.forEach((marker,index)=>marker.setContent(markerHtml(index,activeIndex.value===index,props.places[index]?.type)))
 }
 
 const openInfoWindow=(index:number)=>{
@@ -120,7 +128,7 @@ const createTripMarkers=()=>{
   markers=props.places.map((place,index)=>{
     const marker=new AMap.Marker({
       position:[place.lng,place.lat],
-      content:markerHtml(index,activeIndex.value===index),
+      content:markerHtml(index,activeIndex.value===index,place.type),
       anchor:'bottom-center',
       title:place.title,
       zIndex:120,
@@ -305,6 +313,13 @@ onBeforeUnmount(()=>{
         </template>
         <button class="tool-chip toggle-chip" @click="toolbarCollapsed=!toolbarCollapsed">{{ toolbarCollapsed ? '更多' : '收起' }}</button>
       </section>
+      <section class="route-type-legend" aria-label="路线节点图例">
+        <span><i class="spot"></i>景点</span>
+        <span><i class="meal"></i>餐饮</span>
+        <span><i class="hotel"></i>酒店</span>
+        <span><i class="rental"></i>取还车</span>
+        <span><i class="transfer"></i>路程</span>
+      </section>
       <div class="map-floating">
         <small>{{ routeLoading ? '路线规划中' : '路线总览' }}</small>
         <b>{{ routeMessage }}</b>
@@ -326,6 +341,6 @@ onBeforeUnmount(()=>{
 </template>
 
 <style scoped>
-.trip-route-map{overflow:hidden;align-self:start}.map-card-head{height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #edf1f5}.map-tabs{display:flex;gap:6px}.map-tabs button,.map-float-tools button,.poi-result-strip button{border:0;font:inherit;cursor:pointer}.map-tabs button{height:26px;border:1px solid #dbe5ef;border-radius:7px;padding:0 10px;color:#607086;background:#fff;font-weight:700;font-size:13px}.map-tabs .active{color:#fff;border-color:#0f9f8f;background:#0f9f8f}.map-card-head span{color:#728197;font-size:12px}.amap-wrap{position:relative;height:520px;background:#eef4f3;overflow:hidden}.amap-host{position:absolute;inset:0}.map-float-tools{position:absolute;left:14px;top:14px;z-index:20;display:flex;gap:6px;padding:6px;border-radius:10px;background:rgba(17,24,39,.52);box-shadow:0 10px 24px rgba(15,23,42,.18);backdrop-filter:blur(10px)}.tool-chip{height:28px;display:inline-flex;align-items:center;gap:5px;border-radius:7px;padding:0 9px;color:#fff;background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);font-weight:700;font-size:12px}.tool-chip.active{background:rgba(16,185,129,.88);box-shadow:none}.tool-chip:disabled{opacity:.7;cursor:wait}.tool-dot{width:8px;height:8px;border-radius:2px;display:inline-block}.tool-dot.point{background:#10b981}.tool-dot.food{background:#f59e0b}.tool-dot.hotel{background:#2563eb}.map-floating{position:absolute;top:58px;right:14px;z-index:18;min-width:138px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.9);box-shadow:0 12px 28px rgba(15,23,42,.12)}.map-floating small{display:block;color:#7b8798;margin-bottom:5px;font-size:12px}.map-floating b{color:#172033;font-size:14px}.map-state{position:absolute;inset:0;z-index:30;display:grid;place-items:center;background:rgba(248,250,252,.84);color:#475569;font-weight:800}.map-state.unavailable{color:#b91c1c}.poi-result-strip{position:absolute;left:14px;right:14px;bottom:14px;z-index:22;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:42px 0 0}.poi-strip-head{position:absolute;top:0;left:0;right:0;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-radius:10px;background:rgba(15,23,42,.66);box-shadow:0 10px 24px rgba(15,23,42,.12);backdrop-filter:blur(10px)}.poi-strip-head b{color:#fff;font-size:12px}.poi-strip-head button{height:24px;border-radius:7px;padding:0 9px;background:rgba(255,255,255,.16);color:#fff;font-weight:800;font-size:12px}.poi-result-strip>button{min-width:0;text-align:left;border-radius:10px;padding:9px 11px;background:rgba(255,255,255,.9);color:#475569;box-shadow:0 10px 24px rgba(15,23,42,.12)}.poi-result-strip b,.poi-result-strip span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.poi-result-strip b{color:#172033;font-size:12px}.poi-result-strip span{margin-top:3px;font-size:11px;color:#7b8798}:global(.ai-route-marker),:global(.ai-poi-marker){width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;border:3px solid #fff;box-shadow:0 8px 18px rgba(15,23,42,.25);font-weight:900}:global(.ai-route-marker){background:#0f9f8f}:global(.ai-route-marker.active){background:#f59e0b}:global(.ai-poi-marker.food){background:#f97316}:global(.ai-poi-marker.hotel){background:#2563eb}:global(.ai-map-info){min-width:180px;padding:4px 2px;color:#172033}:global(.ai-map-info strong),:global(.ai-map-info span){display:block}:global(.ai-map-info span){margin-top:5px;color:#0f766e;font-size:12px}:global(.ai-map-info p){margin:6px 0 0;color:#64748b;font-size:12px;line-height:1.45}@media(max-width:760px){.amap-wrap{height:360px}.map-float-tools{left:10px;right:10px;overflow-x:auto}.map-floating{display:none}}
+.trip-route-map{overflow:hidden;align-self:start}.map-card-head{height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #edf1f5}.map-tabs{display:flex;gap:6px}.map-tabs button,.map-float-tools button,.poi-result-strip button{border:0;font:inherit;cursor:pointer}.map-tabs button{height:26px;border:1px solid #dbe5ef;border-radius:7px;padding:0 10px;color:#607086;background:#fff;font-weight:700;font-size:13px}.map-tabs .active{color:#fff;border-color:#0f9f8f;background:#0f9f8f}.map-card-head span{color:#728197;font-size:12px}.amap-wrap{position:relative;height:520px;background:#eef4f3;overflow:hidden}.amap-host{position:absolute;inset:0}.map-float-tools{position:absolute;left:14px;top:14px;z-index:20;display:flex;gap:6px;padding:6px;border-radius:10px;background:rgba(17,24,39,.52);box-shadow:0 10px 24px rgba(15,23,42,.18);backdrop-filter:blur(10px)}.tool-chip{height:28px;display:inline-flex;align-items:center;gap:5px;border-radius:7px;padding:0 9px;color:#fff;background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);font-weight:700;font-size:12px}.tool-chip.active{background:rgba(16,185,129,.88);box-shadow:none}.tool-chip:disabled{opacity:.7;cursor:wait}.tool-dot{width:8px;height:8px;border-radius:2px;display:inline-block}.tool-dot.point{background:#10b981}.tool-dot.food{background:#f59e0b}.tool-dot.hotel{background:#2563eb}.route-type-legend{position:absolute;left:14px;top:62px;z-index:19;display:flex;flex-wrap:wrap;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.9);box-shadow:0 10px 24px rgba(15,23,42,.12);backdrop-filter:blur(10px)}.route-type-legend span{display:inline-flex;align-items:center;gap:5px;color:#475569;font-size:12px;font-weight:800}.route-type-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}.route-type-legend .spot{background:#0f9f8f}.route-type-legend .meal{background:#d97706}.route-type-legend .hotel{background:#2563eb}.route-type-legend .rental{background:#7c3aed}.route-type-legend .transfer{background:#475569}.map-floating{position:absolute;top:58px;right:14px;z-index:18;min-width:138px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.9);box-shadow:0 12px 28px rgba(15,23,42,.12)}.map-floating small{display:block;color:#7b8798;margin-bottom:5px;font-size:12px}.map-floating b{color:#172033;font-size:14px}.map-state{position:absolute;inset:0;z-index:30;display:grid;place-items:center;background:rgba(248,250,252,.84);color:#475569;font-weight:800}.map-state.unavailable{color:#b91c1c}.poi-result-strip{position:absolute;left:14px;right:14px;bottom:14px;z-index:22;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:42px 0 0}.poi-strip-head{position:absolute;top:0;left:0;right:0;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-radius:10px;background:rgba(15,23,42,.66);box-shadow:0 10px 24px rgba(15,23,42,.12);backdrop-filter:blur(10px)}.poi-strip-head b{color:#fff;font-size:12px}.poi-strip-head button{height:24px;border-radius:7px;padding:0 9px;background:rgba(255,255,255,.16);color:#fff;font-weight:800;font-size:12px}.poi-result-strip>button{min-width:0;text-align:left;border-radius:10px;padding:9px 11px;background:rgba(255,255,255,.9);color:#475569;box-shadow:0 10px 24px rgba(15,23,42,.12)}.poi-result-strip b,.poi-result-strip span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.poi-result-strip b{color:#172033;font-size:12px}.poi-result-strip span{margin-top:3px;font-size:11px;color:#7b8798}:global(.ai-route-marker),:global(.ai-poi-marker){width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;border:3px solid #fff;box-shadow:0 8px 18px rgba(15,23,42,.25);font-weight:900}:global(.ai-route-marker.spot){background:#0f9f8f}:global(.ai-route-marker.meal){background:#d97706}:global(.ai-route-marker.hotel){background:#2563eb}:global(.ai-route-marker.rental){background:#7c3aed}:global(.ai-route-marker.transfer){background:#475569}:global(.ai-route-marker.active){outline:4px solid rgba(245,158,11,.28)}:global(.ai-poi-marker.food){background:#f97316}:global(.ai-poi-marker.hotel){background:#2563eb}:global(.ai-map-info){min-width:180px;padding:4px 2px;color:#172033}:global(.ai-map-info strong),:global(.ai-map-info span){display:block}:global(.ai-map-info span){margin-top:5px;color:#0f766e;font-size:12px}:global(.ai-map-info p){margin:6px 0 0;color:#64748b;font-size:12px;line-height:1.45}@media(max-width:760px){.amap-wrap{height:360px}.map-float-tools{left:10px;right:10px;overflow-x:auto}.route-type-legend{top:56px;right:10px}.map-floating{display:none}}
 .tool-dot.night{background:#ec4899}
 </style>

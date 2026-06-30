@@ -47,6 +47,8 @@ export interface DayMoment{
   businessArea?:string
   imageUrls?:string[]
   type?:string
+  compact?:boolean
+  order?:number
 }
 
 export interface BuilderDay{

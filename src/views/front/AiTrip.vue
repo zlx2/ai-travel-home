@@ -82,9 +82,12 @@ const ready=computed(()=>result.value?.status==='READY'&&!!result.value.requirem
 const pendingQuestions=computed(()=>result.value?.status==='NEED_MORE_INFO'?(result.value.questions||[]):[])
 const needsMoreInfo=computed(()=>step.value==='INPUT'&&pendingQuestions.value.length>0)
 const landingMode=computed(()=>step.value==='INPUT'&&!needsMoreInfo.value)
-const hasRental=computed(()=>{
+const explicitNoRental=computed(()=>{
   const text=`${userInput.value} ${form.preferences.join(' ')}`
-  return /自驾|租车|落地|取车|还车|多城市|江浙沪|周边|自然|亲子|父母/.test(text)
+  return /不租车|不要租车|不用租车|非租车|公共交通|公交|地铁|打车|网约车|步行/.test(text)
+})
+const hasRental=computed(()=>{
+  return !explicitNoRental.value
 })
 const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')?'出行方式：落地租车':'路线模式：租车自驾'):'城市轻松游')
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
@@ -233,20 +236,20 @@ const loadRentalContext=async()=>{
       requirement:activeRequirement.value,
       arrivalText:inferArrivalText(),
     })
-    rentalContext.value=data
+    rentalContext.value=data.rentalTripContext?{...data,...data.rentalTripContext}:data
     if(result.value&&data.requirement)result.value={...result.value,requirement:data.requirement}
     if(data.requirement)Object.assign(form,data.requirement)
     syncRentalDetailDefaults()
     const mapped=(data.quoteOptions||[]).map(quoteToView)
-    quoteOptions.value=mapped.length?mapped:fallbackQuoteOptions()
+    quoteOptions.value=mapped
     selectedQuoteId.value=quoteOptions.value[0]?.id||''
     selectedBackendQuote.value=quoteOptions.value[0]?.raw||null
   }catch(error){
     rentalContext.value=null
-    quoteOptions.value=fallbackQuoteOptions()
-    selectedQuoteId.value=quoteOptions.value[0]?.id||''
-    selectedBackendQuote.value=quoteOptions.value[0]?.raw||null
-    ElMessage.warning(error instanceof Error?`租车套餐加载失败，先使用演示套餐：${error.message}`:'租车套餐加载失败，先使用演示套餐')
+    quoteOptions.value=[]
+    selectedQuoteId.value=''
+    selectedBackendQuote.value=null
+    ElMessage.error(error instanceof Error?`租车套餐加载失败：${error.message}`:'租车套餐加载失败')
   }finally{
     quoteLoading.value=false
   }
@@ -266,24 +269,24 @@ const buildRentalTripContext=()=>({
   arrivalPoint:rentalContext.value?.arrivalPoint,
   matchedStore:rentalContext.value?.matchedStore,
   pickupPlan:rentalContext.value?.pickupPlan,
-  arrivalMode:rentalTripForm.arrivalMode,
-  arrivalTimeRange:rentalTripForm.arrivalTimeRange,
-  routeStructure:rentalTripForm.routeStructure,
-  dailyDrivingLimit:rentalTripForm.dailyDrivingLimit,
-  returnMode:rentalTripForm.returnMode,
-  returnPoint:rentalContext.value?.arrivalPoint?.name,
-  withElderOrChildren:/父母|老人|亲子|孩子|小孩/.test(userInput.value),
-  luggageLevel:'普通行李',
+  arrivalMode:rentalContext.value?.arrivalMode||rentalTripForm.arrivalMode,
+  arrivalTimeRange:rentalContext.value?.arrivalTimeRange||rentalTripForm.arrivalTimeRange,
+  routeStructure:rentalContext.value?.routeStructure||rentalTripForm.routeStructure,
+  dailyDrivingLimit:rentalContext.value?.dailyDrivingLimit||rentalTripForm.dailyDrivingLimit,
+  returnMode:rentalContext.value?.returnMode||rentalTripForm.returnMode,
+  returnPoint:rentalContext.value?.returnPoint||rentalContext.value?.arrivalPoint?.name,
+  withElderOrChildren:rentalContext.value?.withElderOrChildren??/父母|老人|亲子|孩子|小孩/.test(userInput.value),
+  luggageLevel:rentalContext.value?.luggageLevel||'普通行李',
 })
 
 const continueToRentalDetails=()=>{
-  if(!selectedQuote.value)return ElMessage.warning('先选择一个租车套餐')
+  if(!selectedBackendQuote.value)return ElMessage.warning('先选择一个租车套餐')
   step.value='RENTAL_DETAILS'
   setTimeout(()=>document.querySelector('.rental-detail-step')?.scrollIntoView({behavior:'smooth',block:'start'}),60)
 }
 
 const startRentalTripBuilding=()=>{
-  if(!selectedQuote.value)return ElMessage.warning('先选择一个租车套餐')
+  if(!selectedBackendQuote.value)return ElMessage.warning('先选择一个租车套餐')
   startDayBuilding()
 }
 
@@ -341,6 +344,45 @@ const chooseFollowUpOption=(field:string,value:string)=>{
   if(field==='budget')form.budget=Number(value.match(/\d+/)?.[0]||form.budget)
 }
 
+const applyFollowUpAnswers=(target:any)=>{
+  for(const [field,rawValue] of Object.entries(followUpAnswers)){
+    const value=String(rawValue||'').trim()
+    if(!value)continue
+    if(field==='days'){
+      const days=Number(value.match(/\d+/)?.[0]||0)
+      if(days)target.days=days
+      continue
+    }
+    if(field==='peopleCount'){
+      const people=Number(value.match(/\d+/)?.[0]||0)
+      if(people)target.peopleCount=people
+      continue
+    }
+    if(field==='budget'){
+      const budget=Number(value.match(/\d+/)?.[0]||0)
+      if(budget)target.budget=budget
+      continue
+    }
+    if(field==='departure')target.departure=value
+    else if(field==='destination')target.destination=value
+    else if(field==='pace')target.pace=/轻松|不要太累|不累/.test(value)?'LIGHT':/紧凑/.test(value)?'TIGHT':'NORMAL'
+    else if(field==='transport'){
+      if(/不租车|公交|地铁|打车|网约车|步行/.test(value)){
+        target.transportMode='PUBLIC_TRANSIT'
+        target.rentalIntent='NO_RENTAL'
+        target.routeMode='DESTINATION_CITY_TRIP'
+      }else if(/租车|自驾/.test(value)){
+        target.transportMode='RENTAL_CAR'
+        target.rentalIntent='USER_REQUIRED'
+        target.routeMode='LANDING_RENTAL_TRIP'
+      }
+    }else{
+      target[field]=value
+    }
+  }
+  return target
+}
+
 const analyze=async()=>{
   if(!userInput.value.trim()&&!form.destination)return ElMessage.warning('先描述一下你想去哪里、怎么玩')
   analyzing.value=true
@@ -352,7 +394,7 @@ const analyze=async()=>{
   rentalOrderId.value=null
   try{
     const extraAnswers=Object.entries(followUpAnswers).filter(([,value])=>value.trim()).map(([field,value])=>`${field}：${value.trim()}`)
-    const requirement=showForm.value?form:result.value?.requirement
+    const requirement=applyFollowUpAnswers({...(showForm.value?form:result.value?.requirement||form)})
     const promptDays=promptDaysValue()
     if(Number.isFinite(promptDays)&&promptDays>MAX_TRIP_DAYS)showTripDaysLimitMessage()
     if(requirement)normalizeRequirementDays(requirement)
@@ -365,17 +407,17 @@ const analyze=async()=>{
       for(const question of result.value.questions||[]){
         if(!(question.field in followUpAnswers))followUpAnswers[question.field]=''
       }
+      step.value='INPUT'
     }else{
       clearFollowUpAnswers()
     }
-    if(ready.value){
+    if(result.value.status==='READY'){
+      step.value='ANALYZED'
       if(hasRental.value){
         await enterQuoteSelect()
       }else{
         await startDayBuilding()
       }
-    }else{
-      step.value='INPUT'
     }
   }finally{
     analyzing.value=false
@@ -427,6 +469,12 @@ const continueFromSummary=()=>{
 
 const startDayBuilding=async()=>{
   if(!result.value?.requirement)return
+  if(hasRental.value&&!selectedBackendQuote.value){
+    ElMessage.warning('请先完成租车报价选择')
+    step.value='QUOTE_SELECT'
+    await loadRentalContext()
+    return
+  }
   normalizeRequirementDays(result.value.requirement)
   generating.value=true
   startGenerateTimer()

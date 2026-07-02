@@ -355,11 +355,11 @@ const buildRentalTripContext=()=>({
   arrivalPoint:rentalContext.value?.arrivalPoint,
   matchedStore:rentalContext.value?.matchedStore,
   pickupPlan:rentalContext.value?.pickupPlan,
-  arrivalMode:rentalContext.value?.arrivalMode||rentalTripForm.arrivalMode,
-  arrivalTimeRange:rentalContext.value?.arrivalTimeRange||rentalTripForm.arrivalTimeRange,
-  routeStructure:rentalContext.value?.routeStructure||rentalTripForm.routeStructure,
-  dailyDrivingLimit:rentalContext.value?.dailyDrivingLimit||rentalTripForm.dailyDrivingLimit,
-  returnMode:rentalContext.value?.returnMode||rentalTripForm.returnMode,
+  arrivalMode:rentalTripForm.arrivalMode||rentalContext.value?.arrivalMode,
+  arrivalTimeRange:rentalTripForm.arrivalTimeRange||rentalContext.value?.arrivalTimeRange,
+  routeStructure:rentalTripForm.routeStructure||rentalContext.value?.routeStructure,
+  dailyDrivingLimit:rentalTripForm.dailyDrivingLimit||rentalContext.value?.dailyDrivingLimit,
+  returnMode:rentalTripForm.returnMode||rentalContext.value?.returnMode,
   returnPoint:rentalContext.value?.returnPoint||rentalContext.value?.arrivalPoint?.name,
   withElderOrChildren:rentalContext.value?.withElderOrChildren??/父母|老人|亲子|孩子|小孩/.test(userInput.value),
   luggageLevel:rentalContext.value?.luggageLevel||'普通行李',
@@ -631,7 +631,8 @@ const startDayBuilding=async()=>{
   startGenerateTimer()
   step.value='DAY_BUILDING'
   try{
-    const extras=hasRental.value?{selectedQuote:selectedBackendQuote.value,rentalTripContext:buildRentalTripContext()}:undefined
+    const rentalTripContext=hasRental.value?buildRentalTripContext():undefined
+    const extras=hasRental.value?{selectedQuote:selectedBackendQuote.value,rentalTripContext}:undefined
     const data=await aiApi.generateStream(result.value.conversationId,result.value.requirement,event=>{
       if(event.label)generateProgressLabel.value=event.label
       if(typeof event.progress==='number')generateProgress.value=event.progress

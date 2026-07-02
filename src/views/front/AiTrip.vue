@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -27,6 +27,20 @@ const generateElapsed=ref(0)
 const generateProgress=ref(1)
 const generateProgressLabel=ref('准备生成行程')
 let generateTimer:number|undefined
+
+// 生成阶段轮播（纯前端展示，不代表后端真实进度）
+const loadingStages=['整理旅行需求','规划每日路线','匹配景点与餐饮','优化交通与时间','生成完整行程']
+const loadingStageIndex=ref(0)
+let stageTimer:number|undefined
+const showLongWaitHint30=ref(false)
+const showLongWaitHint90=ref(false)
+
+watch(generateElapsed,(val)=>{
+  if(val>=90)showLongWaitHint90.value=true
+  else if(val>=30)showLongWaitHint30.value=true
+})
+
+onUnmounted(()=>{ stopGenerateTimer();stopStageTimer() })
 const saving=ref(false)
 const confirming=ref(false)
 const orderCreated=ref(false)
@@ -660,18 +674,33 @@ const startDayBuilding=async()=>{
 
 function startGenerateTimer(){
   stopGenerateTimer()
+  stopStageTimer()
   generateElapsed.value=0
   generateProgress.value=1
   generateProgressLabel.value='开始生成行程'
+  loadingStageIndex.value=0
+  showLongWaitHint30.value=false
+  showLongWaitHint90.value=false
   generateTimer=window.setInterval(()=>{
     generateElapsed.value+=1
   },1000)
+  // 阶段轮播每 4 秒推进一次
+  stageTimer=window.setInterval(()=>{
+    loadingStageIndex.value=(loadingStageIndex.value+1)%loadingStages.length
+  },4000)
 }
 
 function stopGenerateTimer(){
   if(generateTimer){
     window.clearInterval(generateTimer)
     generateTimer=undefined
+  }
+}
+
+function stopStageTimer(){
+  if(stageTimer){
+    window.clearInterval(stageTimer)
+    stageTimer=undefined
   }
 }
 
@@ -1377,7 +1406,7 @@ function timeForIndex(index:number){
 
     <div class="container builder-container">
       <RequirementSummaryBar
-        v-if="ready&&(step==='ANALYZED'||step==='QUOTE_SELECT'||step==='RENTAL_DETAILS')"
+        v-if="ready&&(step==='ANALYZED'||step==='QUOTE_SELECT'||step==='RENTAL_DETAILS'||(step==='DAY_BUILDING'&&generating))"
         :requirement="activeRequirement"
         :route-mode="routeMode"
         :has-rental="hasRental"
@@ -1496,12 +1525,41 @@ function timeForIndex(index:number){
         </div>
       </section>
 
-      <section v-if="generating" class="builder-loading builder-card">
-        <span><el-icon><Loading class="is-loading"/></el-icon></span>
-        <h2>正在逐日生成行程</h2>
-        <p>{{ generateProgressLabel }}</p>
-        <div class="generate-progress"><i :style="{width:`${generateProgress}%`}"></i></div>
-        <small>{{ generateProgress }}% · 已用时 {{ generateElapsed }} 秒</small>
+      <!-- 方案A：取消单独 loading 页面，改为页面内紧凑生成状态面板 -->
+      <section v-if="generating" class="gen-panel">
+        <div class="gen-head">
+          <div class="gen-avatar">
+            <el-icon><Loading class="is-loading"/></el-icon>
+          </div>
+          <div class="gen-headline">
+            <h3>正在生成你的专属行程</h3>
+            <p>AI 正在逐日规划路线、景点、餐饮和时间安排，请稍候片刻</p>
+          </div>
+        </div>
+
+        <!-- 不定进度条：流水 shimmer 效果 -->
+        <div class="gen-track">
+          <div class="gen-bar"></div>
+        </div>
+
+        <!-- 阶段状态轮播 -->
+        <div class="gen-stages">
+          <div
+            v-for="(s, idx) in loadingStages"
+            :key="idx"
+            :class="['gen-stage', { current: idx === loadingStageIndex }]"
+          >
+            <span class="gen-dot"></span>
+            <span class="gen-stage-text">{{ s }}</span>
+          </div>
+        </div>
+
+        <!-- 底部：已用时 + 长时间等待提示 -->
+        <div class="gen-foot">
+          <span class="gen-elapsed">已用时 {{ generateElapsed }} 秒</span>
+          <span v-if="showLongWaitHint90" class="gen-hint warn">AI 仍在生成中，请保持页面打开</span>
+          <span v-else-if="showLongWaitHint30" class="gen-hint">复杂行程生成可能需要更久，请继续等待</span>
+        </div>
       </section>
 
       <section v-if="step==='DAY_BUILDING'&&!generating&&currentDay" class="day-builder">
@@ -1774,55 +1832,147 @@ function timeForIndex(index:number){
   box-shadow: 0 18px 42px rgba(15, 23, 42, .06);
 }
 
-.builder-loading {
-  padding: 42px;
-  text-align: center;
+.gen-panel {
+  padding: 28px 32px 24px;
+  background: #fff;
+  border: 1px solid #eaf0f6;
+  border-radius: 20px;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.04);
 }
 
-.builder-loading span {
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
+.gen-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.gen-avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   display: grid;
   place-items: center;
-  margin: 0 auto 16px;
-  color: #2563eb;
-  background: #eff6ff;
-  font-size: 28px;
+  background: linear-gradient(135deg, #0d9488, #0891b2);
+  color: #fff;
+  font-size: 24px;
+  box-shadow: 0 8px 20px rgba(13, 148, 136, 0.20);
 }
-
-.builder-loading h2 {
+.gen-headline { min-width: 0; }
+.gen-headline h3 {
   margin: 0;
-  color: #172033;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
 }
-
-.builder-loading p {
-  margin: 8px 0 0;
+.gen-headline p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
   color: #64748b;
 }
 
-.builder-loading small {
-  display: block;
-  margin-top: 10px;
-  color: #94a3b8;
-  font-size: 12px;
-}
-
-.generate-progress {
-  width: min(360px, 80%);
-  height: 8px;
-  margin: 18px auto 0;
+/* ── Indeterminate shimmer bar ── */
+.gen-track {
+  margin-top: 20px;
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e8eef6;
+  background: #eef2f6;
+  position: relative;
+}
+.gen-bar {
+  height: 100%;
+  width: 38%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0d9488, #0ea5e9, #0d9488);
+  background-size: 200% 100%;
+  animation: genShimmer 1.6s ease-in-out infinite;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+@keyframes genShimmer {
+  0% { transform: translateX(-20%); }
+  50% { transform: translateX(180%); }
+  100% { transform: translateX(360%); }
 }
 
-.generate-progress i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #2563eb, #10b981);
-  transition: width .28s ease;
+/* ── Stage steps ── */
+.gen-stages {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.gen-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  opacity: 0.4;
+  transition: opacity 0.35s ease;
+}
+.gen-stage.current {
+  opacity: 1;
+}
+.gen-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  transition: all 0.35s ease;
+}
+.gen-stage.current .gen-dot {
+  width: 10px;
+  height: 10px;
+  background: #0d9488;
+  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.12);
+}
+.gen-stage-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  line-height: 1.3;
+  max-width: 80px;
+}
+.gen-stage.current .gen-stage-text {
+  color: #0d9488;
+  font-weight: 700;
+}
+
+/* ── Footer ── */
+.gen-foot {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #f0f4f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+}
+.gen-elapsed {
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+.gen-hint {
+  font-size: 12px;
+  color: #0d9488;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  animation: fadeInUp 0.35s ease;
+}
+.gen-hint.warn {
+  color: #d97706;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .day-builder {

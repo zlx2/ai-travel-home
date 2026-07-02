@@ -544,10 +544,17 @@ const confirmCurrentDay=async()=>{
     days.value[confirmedIndex]={...currentDay.value,status:'locked'}
     const next=confirmedIndex+1
     if(next<days.value.length){
-      pendingDayNo.value=days.value[next].day
-      await ensureDayGenerated(next)
+      // ★ 先切到下一天，立即停旋转
       currentDayIndex.value=next
+      confirming.value=false
+      // 后台预生成下一天（不阻塞按钮）
+      pendingDayNo.value=days.value[next].day
+      try{await ensureDayGenerated(next)}catch(e){
+        ElMessage.error(e instanceof Error?e.message:'预生成下一天失败，可手动点击生成')
+      }
+      pendingDayNo.value=null
     }else{
+      confirming.value=false
       step.value='FINAL_REVIEW'
     }
   }catch(error){
@@ -555,8 +562,6 @@ const confirmCurrentDay=async()=>{
       days.value[confirmedIndex]={...days.value[confirmedIndex],status:'active'}
     }
     ElMessage.error(error instanceof Error?error.message:'单日行程生成失败，请稍后重试')
-  }finally{
-    pendingDayNo.value=null
     confirming.value=false
   }
 }

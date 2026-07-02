@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Calendar, Collection, Compass, MagicStick, MapLocation } from '@element-plus/icons-vue'
-import { homeApi } from '../../api'
+import { homeApi } from '../../api/home'
 import type { Destination, Note } from '../../types'
 import {
   cssImage,

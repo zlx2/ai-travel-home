@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { authApi } from '../../api'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { authApi } from '../../api/auth'
 const router=useRouter(),loading=ref(false),sendingCode=ref(false),seconds=ref(0)
 const form=reactive({username:'',email:'',password:'',confirmPassword:'',emailCode:'',agree:false})
 const sendCode=async()=>{if(!/^\S+@\S+\.\S+$/.test(form.email))return ElMessage.warning('请输入正确的邮箱');sendingCode.value=true;try{await authApi.sendCode(form.email.trim());ElMessage.success('验证码已发送，请检查邮箱');seconds.value=60;const timer=setInterval(()=>{seconds.value--;if(!seconds.value)clearInterval(timer)},1000)}catch{/* 请求层统一展示后端错误。 */}finally{sendingCode.value=false}}

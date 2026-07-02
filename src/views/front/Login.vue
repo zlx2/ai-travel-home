@@ -2,7 +2,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute,useRouter } from 'vue-router'
 import { Lock, User } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { useUserStore } from '../../stores/user'
 import { cssImage, homeCosImage } from '../../utils/homeImages'
 const store=useUserStore(),router=useRouter(),route=useRoute(),loading=ref(false)

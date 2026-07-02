@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, Calendar, Camera, Collection, Document, EditPen, Lock, Star, User } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { userApi, fileApi } from '../../api'
 import { useUserStore } from '../../stores/user'
 import { cssImage, homeCosImage } from '../../utils/homeImages'

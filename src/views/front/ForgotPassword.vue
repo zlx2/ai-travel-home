@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { Message, Lock } from '@element-plus/icons-vue'
-import { authApi } from '../../api'
+import { authApi } from '../../api/auth'
 import { cssImage, homeCosImage } from '../../utils/homeImages'
 
 const router = useRouter()

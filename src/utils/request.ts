@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { clearAuthStorage, TOKEN_KEY } from './auth'
 
 const request=axios.create({baseURL:import.meta.env.VITE_API_BASE_URL||'/api',timeout:120000})

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -16,8 +16,10 @@ import { homeImage } from '../../utils/homeImages'
 import { MAX_TRIP_DAYS, normalizeTripDays } from '../../utils/tripLimits'
 
 const route=useRoute()
-const userInput=ref('带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')
+const userInput=ref('')
 const showForm=ref(false)
+const destEditing=ref(false)
+const editingField=ref('')
 const analyzing=ref(false)
 const generating=ref(false)
 const generateElapsed=ref(0)
@@ -56,7 +58,7 @@ const dayOrderIssues=reactive<Record<number,string[]>>({})
 
 const form=reactive<Requirement>({
   departure:'上海',
-  destination:'杭州',
+  destination:'',
   days:3,
   budget:4000,
   budgetType:'TOTAL',
@@ -77,6 +79,22 @@ onMounted(()=>{
     showForm.value=true
   }
 })
+
+const ALL_DESTINATIONS=['杭州','成都','重庆','西安','厦门','北京','上海','南京','丽江','苏州','昆明','大理','丽江古城','香格里拉','西双版纳','腾冲','广州','深圳','珠海','三亚','海口','桂林','北海','武汉','长沙','张家界','凤凰古城','青岛','济南','泰安','烟台','威海','大连','沈阳','哈尔滨','长春','郑州','洛阳','开封','太原','大同','平遥','呼和浩特','乌鲁木齐','喀纳斯','拉萨','林芝','兰州','敦煌','西宁','青海湖','银川','贵阳','黄果树','遵义','南宁','南昌','九江','婺源','景德镇','福州','泉州','武夷山','合肥','黄山','宏村','无锡','扬州','镇江','周庄','乌镇','千岛湖','莫干山','安吉','舟山','普陀山','稻城','色达','九寨沟','都江堰','峨眉山','华山','太行山','恩施','神农架','长白山','阿尔山','呼伦贝尔','张掖','嘉峪关','中卫']
+
+const pickDestination = (text: string) => {
+  if (!text) return
+  // 优先正则: 去/到/在 XX
+  const m = text.match(/(?:去|到|在)([一-龥]{2,6})(?:玩|旅游|旅行|看|，|。|$|下车|出发|周边)/)
+  if (m) { form.destination = m[1]; return }
+  // 兜底遍历大列表
+  for (const city of ALL_DESTINATIONS) {
+    if (text.includes(city)) { form.destination = city; return }
+  }
+}
+watch(userInput, pickDestination)
+const fieldInput=ref<HTMLInputElement|null>(null)
+watch(editingField, async v=>{ if(v){ await nextTick(); fieldInput.value?.focus(); fieldInput.value?.select() } })
 
 const activeRequirement=computed(()=>result.value?.requirement||form)
 const ready=computed(()=>result.value?.status==='READY'&&!!result.value.requirement)
@@ -1059,10 +1077,14 @@ function timeForIndex(index:number){
           </div>
 
           <div class="quick-fields">
-            <button type="button"><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
-            <button type="button"><b>天数</b><span>{{ form.days }} 天</span></button>
-            <button type="button"><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
-            <button type="button"><b>预算</b><span>¥{{ form.budget }} 内</span></button>
+            <button type="button" v-if="editingField!='dest'" @click="editingField='dest'"><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
+            <label v-else class="quick-edit"><b>目的地</b><input v-model="form.destination" placeholder="输入城市名" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <button type="button" v-if="editingField!='days'" @click="editingField='days'"><b>天数</b><span>{{ form.days }} 天</span></button>
+            <label v-else class="quick-edit"><b>天数</b><input v-model.number="form.days" type="number" min="1" max="7" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <button type="button" v-if="editingField!='people'" @click="editingField='people'"><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
+            <label v-else class="quick-edit"><b>人数</b><input v-model.number="form.peopleCount" type="number" min="1" max="20" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <button type="button" v-if="editingField!='budget'" @click="editingField='budget'"><b>预算</b><span>¥{{ form.budget }} 内</span></button>
+            <label v-else class="quick-edit"><b>预算</b><input v-model.number="form.budget" type="number" min="0" step="500" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
           </div>
 
           <div v-if="analyzing" class="studio-running" aria-live="polite">
@@ -2179,6 +2201,10 @@ function timeForIndex(index:number){
   color: #101827;
   font-weight: 900;
 }
+.quick-edit{height:72px;border:1px solid #e3eaf2;border-radius:16px;background:#f8fafc;display:flex;flex-direction:column;justify-content:center;padding:10px 14px;gap:4px}
+.quick-edit b{font-size:13px;color:#687589}
+.quick-edit input{width:100%;border:0;outline:0;background:transparent;font-size:16px;font-weight:900;color:#101827;padding:0}
+.quick-edit input::placeholder{color:#94a3b8;font-weight:400}
 
 .studio-running {
   position: relative;

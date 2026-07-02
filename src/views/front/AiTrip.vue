@@ -1395,71 +1395,105 @@ function timeForIndex(index:number){
         @continue="continueToRentalDetails"
       />
 
-      <section v-if="step==='RENTAL_DETAILS'" class="rental-detail-step builder-card">
-        <div class="rental-detail-head">
-          <div>
-            <span>SELF DRIVE DETAILS</span>
-            <h2>补充一点自驾信息</h2>
-            <p>回答这些内容，生成的自驾行程会更精准；不填也可以，PlanGo 会按轻松路线处理。</p>
+      <section v-if="step==='RENTAL_DETAILS'" class="rd-panel">
+        <!-- 顶部标题区 -->
+        <div class="rd-head">
+          <div class="rd-head-main">
+            <span class="rd-badge">自驾偏好确认</span>
+            <h2 class="rd-title">自驾偏好，让路线更顺手</h2>
+            <p class="rd-desc">这些信息会帮助 PlanGo 优化取还车、每日驾驶时长和游玩节奏。不填也可以继续生成。</p>
           </div>
-          <strong>{{ selectedQuote?.name }}</strong>
+          <div class="rd-vehicle">{{ selectedQuote?.name }}</div>
         </div>
-        <div class="rental-detail-grid">
-          <label>
-            <span>到达方式</span>
-            <select v-model="rentalTripForm.arrivalMode">
-              <option>机场到达</option>
-              <option>高铁/火车站到达</option>
-              <option>酒店/住宿点出发</option>
-              <option>指定地址交车</option>
-              <option>还不确定</option>
-            </select>
+
+        <!-- 偏好选择区：每个字段设计为选择卡片，透明 select 叠加在卡片之上 -->
+        <div class="rd-grid">
+          <label class="rd-cell">
+            <span class="rd-cell-label">到达方式</span>
+            <div class="rd-cell-card">
+              <span class="rd-cell-value">{{ rentalTripForm.arrivalMode }}</span>
+              <span class="rd-cell-arrow"></span>
+              <select v-model="rentalTripForm.arrivalMode" class="rd-cell-native">
+                <option>机场到达</option>
+                <option>高铁/火车站到达</option>
+                <option>酒店/住宿点出发</option>
+                <option>指定地址交车</option>
+                <option>还不确定</option>
+              </select>
+            </div>
           </label>
-          <label>
-            <span>到达时间</span>
-            <select v-model="rentalTripForm.arrivalTimeRange">
-              <option>上午到达</option>
-              <option>中午到达</option>
-              <option>下午到达</option>
-              <option>晚上到达</option>
-              <option>按到达时间安排</option>
-            </select>
+          <label class="rd-cell">
+            <span class="rd-cell-label">到达时间</span>
+            <div class="rd-cell-card">
+              <span class="rd-cell-value">{{ rentalTripForm.arrivalTimeRange }}</span>
+              <span class="rd-cell-arrow"></span>
+              <select v-model="rentalTripForm.arrivalTimeRange" class="rd-cell-native">
+                <option>上午到达</option>
+                <option>中午到达</option>
+                <option>下午到达</option>
+                <option>晚上到达</option>
+                <option>按到达时间安排</option>
+              </select>
+            </div>
           </label>
-          <label>
-            <span>游玩范围</span>
-            <select v-model="rentalTripForm.routeStructure">
-              <option>只玩本城</option>
-              <option>城市及周边自驾</option>
-              <option>多城市/跨城自驾</option>
-              <option>环线自驾后回到起点</option>
-              <option>还不确定</option>
-            </select>
+          <label class="rd-cell">
+            <span class="rd-cell-label">游玩范围</span>
+            <div class="rd-cell-card">
+              <span class="rd-cell-value">{{ rentalTripForm.routeStructure }}</span>
+              <span class="rd-cell-arrow"></span>
+              <select v-model="rentalTripForm.routeStructure" class="rd-cell-native">
+                <option>只玩本城</option>
+                <option>城市及周边自驾</option>
+                <option>多城市/跨城自驾</option>
+                <option>环线自驾后回到起点</option>
+                <option>还不确定</option>
+              </select>
+            </div>
           </label>
-          <label>
-            <span>驾驶强度</span>
-            <select v-model="rentalTripForm.dailyDrivingLimit">
-              <option>城市短途（单日累计约1-2小时）</option>
-              <option>近郊自驾（单日累计约2-4小时）</option>
-              <option>跨城自驾（单日累计约4-6小时）</option>
-              <option>长途自驾（单日累计6小时以上）</option>
-            </select>
+          <label class="rd-cell">
+            <span class="rd-cell-label">驾驶强度</span>
+            <div class="rd-cell-card">
+              <span class="rd-cell-value">{{ rentalTripForm.dailyDrivingLimit }}</span>
+              <span class="rd-cell-arrow"></span>
+              <select v-model="rentalTripForm.dailyDrivingLimit" class="rd-cell-native">
+                <option>城市短途（单日累计约1-2小时）</option>
+                <option>近郊自驾（单日累计约2-4小时）</option>
+                <option>跨城自驾（单日累计约4-6小时）</option>
+                <option>长途自驾（单日累计6小时以上）</option>
+              </select>
+            </div>
           </label>
-          <label>
-            <span>还车方式</span>
-            <select v-model="rentalTripForm.returnMode">
-              <option>同城还车</option>
-              <option>异地还车</option>
-            </select>
+          <label class="rd-cell">
+            <span class="rd-cell-label">还车方式</span>
+            <div class="rd-cell-card">
+              <span class="rd-cell-value">{{ rentalTripForm.returnMode }}</span>
+              <span class="rd-cell-arrow"></span>
+              <select v-model="rentalTripForm.returnMode" class="rd-cell-native">
+                <option>同城还车</option>
+                <option>异地还车</option>
+              </select>
+            </div>
           </label>
         </div>
-        <div class="rental-detail-pickup">
-          <b>附加服务</b>
-          <p>{{ rentalContext?.pickupPlan?.displayText || '将按你的到达点安排送车接人。' }}</p>
+
+        <!-- 服务说明区 -->
+        <div class="rd-svc">
+          <div class="rd-svc-icon">i</div>
+          <div class="rd-svc-body">
+            <strong>已为你匹配取车服务</strong>
+            <p>{{ rentalContext?.pickupPlan?.displayText || '将按你的到达点安排送车接人。' }}</p>
+          </div>
+          <span class="rd-svc-badge">推荐</span>
         </div>
-        <footer>
-          <button class="secondary-action" @click="step='QUOTE_SELECT'">返回换套餐</button>
-          <button class="generate-day-btn" @click="startRentalTripBuilding">生成自驾行程</button>
-        </footer>
+
+        <!-- 底部操作区 -->
+        <div class="rd-actions">
+          <p class="rd-actions-hint">确认后，PlanGo 将根据以上偏好生成每日自驾路线。</p>
+          <div class="rd-actions-group">
+            <button class="rd-btn-back" @click="step='QUOTE_SELECT'">返回换套餐</button>
+            <button class="rd-btn-go" @click="startRentalTripBuilding">生成自驾行程</button>
+          </div>
+        </div>
       </section>
 
       <section v-if="generating" class="builder-loading builder-card">
@@ -2060,7 +2094,284 @@ function timeForIndex(index:number){
   font-weight: 900!important;
 }
 
-.rental-detail-step{margin-top:24px;padding:24px}.rental-detail-head{display:flex;justify-content:space-between;gap:18px;margin-bottom:18px}.rental-detail-head span{color:#2563eb;font-size:12px;font-weight:900}.rental-detail-head h2{margin:6px 0;color:#111827}.rental-detail-head p{margin:0;color:#64748b}.rental-detail-head strong{align-self:flex-start;border-radius:999px;background:#eff6ff;color:#1d4ed8;padding:8px 12px;white-space:nowrap}.rental-detail-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.rental-detail-grid label{display:grid;gap:7px}.rental-detail-grid span{color:#64748b;font-size:13px;font-weight:800}.rental-detail-grid select{width:100%;height:42px;border:1px solid #dbe7f0;border-radius:10px;background:#fff;color:#172033;padding:0 10px;outline:0}.rental-detail-pickup{margin-top:16px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff;padding:14px 16px}.rental-detail-pickup b{color:#172033}.rental-detail-pickup p{margin:6px 0 0;color:#64748b}.rental-detail-step footer{display:flex;justify-content:flex-end;gap:12px;margin-top:18px}.secondary-action{height:44px;border:1px solid #dbe7f0;border-radius:12px;background:#fff;color:#172033;padding:0 18px;font-weight:900;cursor:pointer}
+.rd-panel {
+  margin-top: 24px;
+  padding: 24px 28px;
+  background: #fff;
+  border: 1px solid #eaf0f6;
+  border-radius: 20px;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.04);
+}
+
+/* ── Head ── */
+.rd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.rd-head-main { min-width: 0; }
+.rd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f0fdfa, #eff6ff);
+  color: #0d9488;
+  font-size: 12px;
+  font-weight: 700;
+}
+.rd-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0d9488;
+  flex-shrink: 0;
+}
+.rd-title {
+  margin: 10px 0 0;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+  color: #0d9488;
+}
+.rd-desc {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #64748b;
+  max-width: 520px;
+}
+.rd-vehicle {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f0f9ff, #f0fdfa);
+  border: 1px solid rgba(13, 148, 136, 0.12);
+  color: #0d9488;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 1px 6px rgba(13, 148, 136, 0.06);
+}
+
+/* ── Preference Grid ── */
+.rd-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 14px;
+}
+.rd-cell {
+  display: grid;
+  gap: 6px;
+  cursor: pointer;
+}
+.rd-cell-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7a8f;
+  letter-spacing: 0.2px;
+  padding-left: 2px;
+}
+.rd-cell-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  transition: all 0.2s ease;
+}
+.rd-cell-card:hover {
+  border-color: #0d9488;
+  background: #fafdfd;
+}
+.rd-cell-card:focus-within {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.08);
+  background: #fafffe;
+}
+.rd-cell-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.rd-cell-arrow {
+  flex-shrink: 0;
+  display: block;
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  border-right: 2px solid #94a3b8;
+  border-bottom: 2px solid #94a3b8;
+  transform: rotate(45deg) translateY(-3px);
+  pointer-events: none;
+  transition: border-color 0.2s ease;
+}
+.rd-cell-card:focus-within .rd-cell-arrow {
+  border-color: #0d9488;
+}
+.rd-cell-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+  font-size: 16px;
+}
+
+/* ── Service Card ── */
+.rd-svc {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #f0fdfa 100%);
+  border: 1px solid rgba(13, 148, 136, 0.08);
+  min-height: 56px;
+}
+.rd-svc-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #0d9488, #0891b2);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  font-style: italic;
+  font-family: serif;
+}
+.rd-svc-body {
+  flex: 1;
+  min-width: 0;
+}
+.rd-svc-body strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.rd-svc-body p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #64748b;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rd-svc-badge {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  color: #047857;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── Actions Bar ── */
+.rd-actions {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f4f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.rd-actions-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.5;
+  max-width: 400px;
+}
+.rd-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.rd-btn-back {
+  height: 44px;
+  padding: 0 20px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+.rd-btn-back:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #1e293b;
+}
+.rd-btn-back:active {
+  transform: scale(0.97);
+}
+.rd-btn-go {
+  position: relative;
+  overflow: hidden;
+  height: 44px;
+  min-width: 170px;
+  padding: 0 28px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0d9488, #0891b2);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.25);
+  white-space: nowrap;
+}
+.rd-btn-go:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(13, 148, 136, 0.32);
+  filter: brightness(1.05);
+}
+.rd-btn-go:active {
+  transform: translateY(0) scale(0.98);
+}
+.rd-btn-go::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  transform: translateX(-110%);
+  transition: transform 0.4s ease;
+}
+.rd-btn-go:hover::before {
+  transform: translateX(110%);
+}
 
 .product-hero {
   min-height: calc(100vh - 72px);
@@ -3031,6 +3342,15 @@ function timeForIndex(index:number){
   .summary-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  /* Rental grid: 5-col → 3-col */
+  .rd-grid {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+  .rd-vehicle {
+    font-size: 12px;
+    padding: 5px 12px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -3128,6 +3448,47 @@ function timeForIndex(index:number){
     padding: 10px 0;
     align-items: flex-start;
     text-align: left;
+  }
+
+  /* Mobile rental card */
+  .rd-panel {
+    padding: 20px 18px;
+    border-radius: 16px;
+    margin-top: 16px;
+  }
+  .rd-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .rd-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .rd-vehicle {
+    align-self: flex-start;
+  }
+  .rd-title {
+    font-size: 19px;
+  }
+  .rd-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .rd-actions-hint {
+    max-width: none;
+  }
+  .rd-actions-group {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .rd-btn-go,
+  .rd-btn-back {
+    width: 100%;
+    justify-content: center;
+  }
+  .rd-svc-badge {
+    display: none;
   }
 }
 </style>

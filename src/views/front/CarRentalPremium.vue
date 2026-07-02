@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Calendar, Check, Clock, EditPen, Headset, Location, Money, Search, StarFilled, Suitcase, Switch, User, Van } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { rentalApi } from '../../api'
 
 type Mode = 'home' | 'results' | 'detail' | 'order'

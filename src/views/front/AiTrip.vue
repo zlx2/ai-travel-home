@@ -21,6 +21,7 @@ const showForm=ref(false)
 const destEditing=ref(false)
 const editingField=ref('')
 const analyzing=ref(false)
+const landingError=ref('')
 const generating=ref(false)
 const generateElapsed=ref(0)
 const generateProgress=ref(1)
@@ -69,6 +70,52 @@ const form=reactive<Requirement>({
   travelDate:'',
 })
 const preferenceOptions=['美食体验','夜景','历史文化','自然风光','亲子','拍照打卡','自驾','轻松游']
+type RequirementField='departure'|'destination'|'days'|'budget'|'peopleCount'|'preferences'|'pace'|'avoidances'|'travelDate'
+const manualFields=reactive<Record<RequirementField,boolean>>({
+  departure:false,
+  destination:false,
+  days:false,
+  budget:false,
+  peopleCount:false,
+  preferences:false,
+  pace:false,
+  avoidances:false,
+  travelDate:false,
+})
+
+const markFieldEdited=(field:RequirementField)=>{
+  manualFields[field]=true
+}
+
+const markDestinationEdited=()=>{
+  markFieldEdited('destination')
+  syncRouteScopeToDestination(form)
+}
+
+const syncRouteScopeToDestination=(target:any)=>{
+  const destination=String(target.destination||'').trim()
+  if(!destination)return target
+  target.routeCities=[destination]
+  target.routeRegion=''
+  if(target.rentalRequirement){
+    target.rentalRequirement={
+      ...target.rentalRequirement,
+      rentalStartCity:destination,
+      rentalEndCity:destination,
+      pickupCity:destination,
+      returnCity:destination,
+      rentalDays:target.days||target.rentalRequirement.rentalDays,
+    }
+  }
+  return target
+}
+
+const setIfNotManual=<K extends keyof Requirement>(field:K,value:Requirement[K])=>{
+  if(!manualFields[field as RequirementField]&&value!==undefined&&value!==null&&value!==''){
+    ;(form[field] as Requirement[K])=value
+    if(field==='destination')syncRouteScopeToDestination(form)
+  }
+}
 
 onMounted(()=>{
   if(route.query.destination){
@@ -82,17 +129,37 @@ onMounted(()=>{
 
 const ALL_DESTINATIONS=['杭州','成都','重庆','西安','厦门','北京','上海','南京','丽江','苏州','昆明','大理','丽江古城','香格里拉','西双版纳','腾冲','广州','深圳','珠海','三亚','海口','桂林','北海','武汉','长沙','张家界','凤凰古城','青岛','济南','泰安','烟台','威海','大连','沈阳','哈尔滨','长春','郑州','洛阳','开封','太原','大同','平遥','呼和浩特','乌鲁木齐','喀纳斯','拉萨','林芝','兰州','敦煌','西宁','青海湖','银川','贵阳','黄果树','遵义','南宁','南昌','九江','婺源','景德镇','福州','泉州','武夷山','合肥','黄山','宏村','无锡','扬州','镇江','周庄','乌镇','千岛湖','莫干山','安吉','舟山','普陀山','稻城','色达','九寨沟','都江堰','峨眉山','华山','太行山','恩施','神农架','长白山','阿尔山','呼伦贝尔','张掖','嘉峪关','中卫']
 
-const pickDestination = (text: string) => {
+const syncFormFromSupplement = (text: string) => {
   if (!text) return
-  // 优先正则: 去/到/在 XX
-  const m = text.match(/(?:去|到|在)([一-龥]{2,6})(?:玩|旅游|旅行|看|，|。|$|下车|出发|周边)/)
-  if (m) { form.destination = m[1]; return }
-  // 兜底遍历大列表
-  for (const city of ALL_DESTINATIONS) {
-    if (text.includes(city)) { form.destination = city; return }
+  const departure=text.match(/^([一-龥]{2,8})出发/)
+  if(departure)setIfNotManual('departure',departure[1])
+  const destination=text.match(/(?:去|到|在|飞到)([一-龥]{2,8})(?:玩|旅游|旅行|自驾|看|，|。|$|下车|出发|周边)/)
+  if(destination){
+    setIfNotManual('destination',destination[1])
+  }else{
+    for(const city of ALL_DESTINATIONS){
+      if(text.includes(city)){ setIfNotManual('destination',city); break }
+    }
   }
+  const days=text.match(/(\d+)\s*天/)
+  if(days&&!manualFields.days)setFormDays(days[1])
+  const budget=text.match(/预算(?:在)?\s*(\d+)/)
+  if(budget)setIfNotManual('budget',Number(budget[1]))
+  const people=text.match(/(\d+)\s*人|([一二两三四五六七八九十])个人/)
+  const chinesePeople:Record<string,number>={一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10}
+  if(people)setIfNotManual('peopleCount',people[1]?Number(people[1]):chinesePeople[people[2]])
+  if(/轻松|不要太累|不累/.test(text))setIfNotManual('pace','LIGHT')
+  if(/紧凑|多玩/.test(text))setIfNotManual('pace','TIGHT')
+  const nextPreferences=[...form.preferences]
+  for(const preference of preferenceOptions){
+    const keyword=preference.replace('体验','')
+    if(text.includes(keyword)&&!nextPreferences.includes(preference))nextPreferences.push(preference)
+  }
+  if(!manualFields.preferences&&nextPreferences.length!==form.preferences.length)form.preferences=nextPreferences
+  if(/不要太累|不累/.test(text)&&!manualFields.avoidances&&!form.avoidances.includes('不要太累'))form.avoidances=[...form.avoidances,'不要太累']
 }
-watch(userInput, pickDestination)
+watch(userInput, syncFormFromSupplement)
+watch(()=>form.destination,value=>{ if(value)landingError.value='' })
 const fieldInput=ref<HTMLInputElement|null>(null)
 watch(editingField, async v=>{ if(v){ await nextTick(); fieldInput.value?.focus(); fieldInput.value?.select() } })
 
@@ -309,8 +376,18 @@ const startRentalTripBuilding=()=>{
   startDayBuilding()
 }
 
+const templateSupplement=(value:string)=>{
+  const notes:string[]=[]
+  const arrival=value.match(/([一-龥A-Za-z0-9]+(?:东站|西站|南站|北站|站|机场|酒店|宾馆|民宿))(?:下车|落地|到达)?/)
+  if(arrival)notes.push(`${arrival[1]}到达`)
+  if(/不要太累|不累|轻松/.test(value))notes.push('不要太累')
+  if(/美食|吃/.test(value))notes.push('想体验本地美食')
+  if(/自驾|租车/.test(value))notes.push('需要租车自驾')
+  if(/多城市|串联|跨城/.test(value))notes.push('多城市串联')
+  return Array.from(new Set(notes)).join('，')
+}
+
 const applyExample=(value:string)=>{
-  userInput.value=value
   if(value.includes('杭州')) form.destination='杭州'
   if(value.includes('成都')) form.destination='成都'
   if(value.includes('重庆')) form.destination='重庆'
@@ -331,6 +408,49 @@ const applyExample=(value:string)=>{
   if(/父母|老人/.test(value))form.peopleCount=3
   if(/1人|一个人|独自/.test(value))form.peopleCount=1
   if(/2人|两人|情侣/.test(value))form.peopleCount=2
+  if(/轻松|不要太累|不累/.test(value))form.pace='LIGHT'
+  syncRouteScopeToDestination(form)
+  userInput.value=templateSupplement(value)
+}
+
+const compactRequirementText=(requirement:Partial<Requirement>)=>{
+  const parts=[
+    requirement.departure?`${requirement.departure}出发`: '',
+    requirement.destination?`去${requirement.destination}`: '',
+    requirement.days?`玩${requirement.days}天`: '',
+    requirement.peopleCount?`${requirement.peopleCount}人出行`: '',
+    requirement.budget?`预算${requirement.budget}以内`: '',
+    requirement.preferences?.length?`偏好${requirement.preferences.join('、')}`: '',
+    requirement.pace==='LIGHT'?'节奏轻松':requirement.pace==='TIGHT'?'节奏紧凑':'',
+    requirement.avoidances?.length?`避开${requirement.avoidances.join('、')}`: '',
+  ].filter(Boolean)
+  return parts.join('，')
+}
+
+const paceText=(pace?:string)=>{
+  if(pace==='LIGHT')return'轻松'
+  if(pace==='TIGHT')return'紧凑'
+  return'适中'
+}
+
+const confirmedRequirementSummary=computed(()=>{
+  const parts=[
+    form.departure?`${form.departure}出发`:'',
+    form.destination||'请填写目的地',
+    `${form.days||1} 天`,
+    `${form.peopleCount||1} 人`,
+    form.budget?`¥${form.budget} 内`:'预算待定',
+    paceText(form.pace),
+    form.preferences.length?form.preferences.join('/'):'',
+  ].filter(Boolean)
+  return parts.join(' · ')
+})
+
+const buildDraftRequirement=()=>{
+  const source={...(result.value?.requirement||{}),...form}
+  const requirement=applyFollowUpAnswers(source)
+  normalizeRequirementDays(requirement)
+  return syncRouteScopeToDestination(requirement)
 }
 
 const fieldValue=(field:string)=>{
@@ -403,7 +523,10 @@ const applyFollowUpAnswers=(target:any)=>{
 }
 
 const analyze=async()=>{
-  if(!userInput.value.trim()&&!form.destination)return ElMessage.warning('先描述一下你想去哪里、怎么玩')
+  if(!form.destination){
+    landingError.value='先填写目的地，或者选择一个旅行灵感模板，我再帮你生成行程。'
+    return
+  }
   analyzing.value=true
   plan.value=null
   recommendation.value=null
@@ -413,14 +536,23 @@ const analyze=async()=>{
   rentalOrderId.value=null
   try{
     const extraAnswers=Object.entries(followUpAnswers).filter(([,value])=>value.trim()).map(([field,value])=>`${field}：${value.trim()}`)
-    const requirement=applyFollowUpAnswers({...(showForm.value?form:result.value?.requirement||form)})
+    const requirement=buildDraftRequirement()
+    const mergedInput=[userInput.value.trim(), compactRequirementText(requirement)].filter(Boolean).join('；')
     const promptDays=promptDaysValue()
     if(Number.isFinite(promptDays)&&promptDays>MAX_TRIP_DAYS)showTripDaysLimitMessage()
-    if(requirement)normalizeRequirementDays(requirement)
-    result.value=await aiApi.analyze({conversationId:result.value?.conversationId,userInput:userInput.value,extraAnswers,requirement})
+    result.value=await aiApi.analyze({
+      conversationId:result.value?.conversationId,
+      userInput:mergedInput,
+      extraAnswers,
+      formInput:requirement,
+      requirement,
+      selectedDestination:requirement.destination,
+    })
     if(result.value.requirement){
       normalizeRequirementDays(result.value.requirement)
+      syncRouteScopeToDestination(result.value.requirement)
       Object.assign(form,result.value.requirement)
+      syncRouteScopeToDestination(form)
     }
     if(result.value.status==='NEED_MORE_INFO'){
       for(const question of result.value.questions||[]){
@@ -1045,29 +1177,34 @@ function timeForIndex(index:number){
           <header class="studio-head">
             <div>
               <p class="hero-kicker">PLANGO AI TRIP STUDIO</p>
-              <h1>把一句旅行想法，整理成可确认的每日行程</h1>
+              <h1>先确认需求，再生成每日行程</h1>
             </div>
             <div class="studio-status">
               <span></span>
               <b>{{ analyzing ? 'AI 工作中' : 'Ready' }}</b>
             </div>
           </header>
-          <p class="hero-lead">像和旅行策划师聊天一样写下目的地、天数、同行人、预算和偏好，PlanGo 会把模糊想法拆成可调整的路线草案。</p>
+          <p class="hero-lead">先确认目的地、天数、人数和预算，再让 AI 生成路线。模板可以快速填充，下面的信息随时可以改。</p>
+
+          <div v-if="landingError" class="landing-alert">
+            <span>需要补充</span>
+            <b>{{ landingError }}</b>
+          </div>
 
           <div class="hero-input-shell">
             <div class="prompt-toolbar">
-              <span>Prompt</span>
-              <span>智能识别目的地 / 天数 / 预算 / 偏好</span>
+              <span>还有什么想告诉 AI</span>
+              <span>已确认的信息会优先使用</span>
             </div>
             <textarea
               v-model="userInput"
               maxlength="300"
-              placeholder="例如：带父母去杭州玩 3 天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算 4000 以内。"
+              placeholder="例如：杭州东站下车，不要太累，想体验本地美食，下午到达。"
             />
             <div class="hero-input-actions">
               <div class="input-hint">
                 <b>{{ userInput.length }}/300</b>
-                <span>描述越具体，AI 越容易一次理解</span>
+                <span>这里可以写到达时间、偏好和不想踩的坑</span>
               </div>
               <button type="button" :disabled="analyzing" @click="analyze">
                 <el-icon><Loading v-if="analyzing" class="is-loading"/><MagicStick v-else/></el-icon>
@@ -1076,15 +1213,24 @@ function timeForIndex(index:number){
             </div>
           </div>
 
+          <div class="confirmed-basis">
+            <span>将按这些生成</span>
+            <b>{{ confirmedRequirementSummary }}</b>
+          </div>
+
+          <div class="quick-title">
+            <span>出行信息</span>
+            <small>改这里，生成结果就跟着变</small>
+          </div>
           <div class="quick-fields">
             <button type="button" v-if="editingField!='dest'" @click="editingField='dest'"><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
-            <label v-else class="quick-edit"><b>目的地</b><input v-model="form.destination" placeholder="输入城市名" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <label v-else class="quick-edit"><b>目的地</b><input v-model="form.destination" placeholder="输入城市名" @input="markDestinationEdited" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
             <button type="button" v-if="editingField!='days'" @click="editingField='days'"><b>天数</b><span>{{ form.days }} 天</span></button>
-            <label v-else class="quick-edit"><b>天数</b><input v-model.number="form.days" type="number" min="1" max="7" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <label v-else class="quick-edit"><b>天数</b><input v-model.number="form.days" type="number" min="1" max="7" @input="markFieldEdited('days')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
             <button type="button" v-if="editingField!='people'" @click="editingField='people'"><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
-            <label v-else class="quick-edit"><b>人数</b><input v-model.number="form.peopleCount" type="number" min="1" max="20" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <label v-else class="quick-edit"><b>人数</b><input v-model.number="form.peopleCount" type="number" min="1" max="20" @input="markFieldEdited('peopleCount')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
             <button type="button" v-if="editingField!='budget'" @click="editingField='budget'"><b>预算</b><span>¥{{ form.budget }} 内</span></button>
-            <label v-else class="quick-edit"><b>预算</b><input v-model.number="form.budget" type="number" min="0" step="500" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <label v-else class="quick-edit"><b>预算</b><input v-model.number="form.budget" type="number" min="0" step="500" @input="markFieldEdited('budget')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
           </div>
 
           <div v-if="analyzing" class="studio-running" aria-live="polite">
@@ -1127,7 +1273,6 @@ function timeForIndex(index:number){
       <section class="inspiration-block">
         <div class="section-head">
           <h3>旅行灵感</h3>
-          <span>选一个模板，马上替换输入内容</span>
         </div>
         <div class="inspiration-grid">
           <button @click="applyExample('上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')"><span>高铁到达</span><b>杭州父母慢游</b><small>东站取车 · 同城还车</small></button>
@@ -1919,7 +2064,7 @@ function timeForIndex(index:number){
 .product-hero {
   min-height: calc(100vh - 72px);
   display: block;
-  padding: 38px 24px 58px;
+  padding: 30px 24px 48px;
   background:
     radial-gradient(circle at 14% 12%, rgba(15, 159, 143, .09), transparent 32%),
     radial-gradient(circle at 86% 10%, rgba(37, 99, 235, .08), transparent 34%),
@@ -1931,21 +2076,21 @@ function timeForIndex(index:number){
   width: min(1360px, calc(100vw - 64px));
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0,1fr) 430px;
-  gap: 24px;
-  align-items: stretch;
+  grid-template-columns: minmax(720px,1fr) 340px;
+  gap: 20px;
+  align-items: start;
 }
 
 .studio-panel {
   position: relative;
   overflow: hidden;
-  padding: 26px;
+  padding: 24px 28px;
   border: 1px solid rgba(203, 213, 225, .82);
   border-radius: 22px;
   background:
     linear-gradient(180deg,rgba(255,255,255,.96),rgba(250,253,255,.92)),
     rgba(255,255,255,.94);
-  box-shadow: 0 22px 54px rgba(15,23,42,.09);
+  box-shadow: 0 18px 46px rgba(15,23,42,.08);
 }
 
 .studio-panel:before {
@@ -1994,11 +2139,11 @@ function timeForIndex(index:number){
 }
 
 .studio-panel h1 {
-  max-width: 760px;
+  max-width: 680px;
   margin: 0;
   color: #0f172a;
-  font-size: 46px;
-  line-height: 1.12;
+  font-size: 34px;
+  line-height: 1.18;
   letter-spacing: 0;
 }
 
@@ -2032,18 +2177,48 @@ function timeForIndex(index:number){
 .hero-lead {
   position: relative;
   z-index: 1;
-  max-width: 720px;
-  margin: 14px 0 22px;
+  max-width: 760px;
+  margin: 12px 0 18px;
   color: #64748b;
   font-size: 15px;
-  line-height: 1.75;
+  line-height: 1.7;
+}
+
+.landing-alert {
+  position: relative;
+  z-index: 1;
+  margin: -4px 0 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.landing-alert span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #c2410c;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.landing-alert b {
+  color: #7c2d12;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .product-hero .hero-input-shell {
   position: relative;
   z-index: 1;
   width: 100%;
-  min-height: 214px;
+  min-height: 198px;
   grid-template-columns: 1fr;
   padding: 16px;
   border: 1px solid rgba(203,213,225,.92);
@@ -2078,7 +2253,7 @@ function timeForIndex(index:number){
 }
 
 .product-hero .hero-input-shell textarea {
-  height: 116px;
+  height: 104px;
   padding: 2px;
   border: 0;
   outline: 0;
@@ -2168,19 +2343,67 @@ function timeForIndex(index:number){
   box-shadow: 0 12px 26px rgba(37, 99, 235, .20);
 }
 
+.confirmed-basis {
+  position: relative;
+  z-index: 1;
+  margin-top: 12px;
+  border: 1px solid rgba(15,159,143,.16);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: 104px minmax(0,1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  background: linear-gradient(135deg,rgba(236,253,245,.86),rgba(239,246,255,.82));
+}
+
+.confirmed-basis span {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.confirmed-basis b {
+  min-width: 0;
+  color: #172033;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.quick-title {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.quick-title span {
+  color: #172033;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.quick-title small {
+  color: #7b8798;
+  font-size: 12px;
+}
+
 .product-hero .quick-fields {
   position: relative;
   z-index: 1;
   width: 100%;
   grid-template-columns: repeat(4,1fr);
-  margin-top: 14px;
+  margin-top: 8px;
   gap: 12px;
 }
 
 .product-hero .quick-fields button {
-  height: 72px;
-  border-radius: 16px;
-  background: #f8fafc;
+  height: 68px;
+  border-radius: 14px;
+  background: #fbfcfe;
   box-shadow: none;
   transition: border-color .18s ease, background .18s ease, transform .18s ease;
 }
@@ -2201,7 +2424,7 @@ function timeForIndex(index:number){
   color: #101827;
   font-weight: 900;
 }
-.quick-edit{height:72px;border:1px solid #e3eaf2;border-radius:16px;background:#f8fafc;display:flex;flex-direction:column;justify-content:center;padding:10px 14px;gap:4px}
+.quick-edit{height:68px;border:1px solid #e3eaf2;border-radius:14px;background:#fbfcfe;display:flex;flex-direction:column;justify-content:center;padding:10px 14px;gap:4px}
 .quick-edit b{font-size:13px;color:#687589}
 .quick-edit input{width:100%;border:0;outline:0;background:transparent;font-size:16px;font-weight:900;color:#101827;padding:0}
 .quick-edit input::placeholder{color:#94a3b8;font-weight:400}
@@ -2294,11 +2517,11 @@ function timeForIndex(index:number){
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.70);
-  border-radius: 22px;
-  min-height: 504px;
+  border-radius: 20px;
+  min-height: 448px;
   color: #fff;
   background: #10233f;
-  box-shadow: 0 28px 70px rgba(15,23,42,.18);
+  box-shadow: 0 18px 44px rgba(15,23,42,.14);
 }
 
 .studio-preview img {
@@ -2322,9 +2545,9 @@ function timeForIndex(index:number){
 .preview-topline {
   position: absolute;
   z-index: 1;
-  top: 18px;
-  left: 18px;
-  right: 18px;
+  top: 16px;
+  left: 16px;
+  right: 16px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -2338,9 +2561,9 @@ function timeForIndex(index:number){
   border-radius: 999px;
   background: rgba(255,255,255,.16);
   backdrop-filter: blur(12px);
-  padding: 6px 10px;
+  padding: 5px 9px;
   color: rgba(255,255,255,.92);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
 }
 
@@ -2348,29 +2571,29 @@ function timeForIndex(index:number){
 .preview-stats {
   position: absolute;
   z-index: 1;
-  left: 20px;
-  right: 20px;
+  left: 16px;
+  right: 16px;
 }
 
-.preview-card { bottom: 94px; }
-.preview-card b { display:block;margin-top:10px;font-size:25px; }
-.preview-card p { margin:8px 0 0;color:rgba(255,255,255,.78);line-height:1.55; }
-.preview-stats { bottom:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px; }
+.preview-card { bottom: 82px; }
+.preview-card b { display:block;margin-top:10px;font-size:20px; }
+.preview-card p { margin:7px 0 0;color:rgba(255,255,255,.78);line-height:1.5;font-size:13px; }
+.preview-stats { bottom:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:7px; }
 .preview-stats div {
-  min-height: 44px;
+  min-height: 40px;
   border: 1px solid rgba(255,255,255,.16);
   border-radius: 14px;
   display: grid;
   place-items: center;
   background: rgba(255,255,255,.14);
-  padding: 10px;
+  padding: 8px;
   backdrop-filter: blur(10px);
 }
-.preview-stats b { color:#fff;font-size:13px; }
+.preview-stats b { color:#fff;font-size:12px; }
 
 .product-hero .inspiration-block {
   width: min(1280px, calc(100vw - 64px));
-  margin: 24px auto 0;
+  margin: 18px auto 0;
 }
 
 .section-head {
@@ -2838,7 +3061,7 @@ function timeForIndex(index:number){
     border-radius: 20px;
   }
   .studio-panel h1 {
-    font-size: 31px;
+    font-size: 28px;
   }
   .hero-input-actions {
     align-items: stretch;

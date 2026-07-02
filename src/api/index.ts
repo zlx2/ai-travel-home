@@ -56,7 +56,9 @@ export const aiApi = {
     conversationId?: string | null
     userInput: string
     extraAnswers?: string[]
+    formInput?: Partial<Requirement>
     requirement?: Partial<Requirement>
+    selectedDestination?: string
   }) {
     return request.post('/ai/trips/analyze', payload) as Promise<AnalyzeResult>
   },

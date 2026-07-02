@@ -118,9 +118,9 @@ const emit=defineEmits<{
             <el-form-item label="同行人数"><el-input-number v-model="form.peopleCount" :min="1" :max="20"/></el-form-item>
             <el-form-item label="旅行节奏">
               <el-radio-group v-model="form.pace">
-                <el-radio-button label="LIGHT">轻松</el-radio-button>
-                <el-radio-button label="MEDIUM">适中</el-radio-button>
-                <el-radio-button label="TIGHT">充实</el-radio-button>
+                <el-radio-button value="LIGHT">轻松</el-radio-button>
+                <el-radio-button value="MEDIUM">适中</el-radio-button>
+                <el-radio-button value="TIGHT">充实</el-radio-button>
               </el-radio-group>
             </el-form-item>
           </div>

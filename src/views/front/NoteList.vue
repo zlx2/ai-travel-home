@@ -127,8 +127,8 @@ watch(() => route.query.tag, () => {
           </div>
           <div>
             <el-radio-group v-model="params.sort" @change="load">
-              <el-radio-button label="latest">最新</el-radio-button>
-              <el-radio-button label="hot">热门</el-radio-button>
+              <el-radio-button value="latest">最新</el-radio-button>
+              <el-radio-button value="hot">热门</el-radio-button>
             </el-radio-group>
           </div>
         </template>

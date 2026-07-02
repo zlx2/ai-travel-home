@@ -173,6 +173,7 @@ const payableTotalCent = computed(() => selectedFee.value.totalPriceCent + prote
 const bookingLoading = ref(false)
 const latestOrderId = ref<number | null>(null)
 const latestOrderDetail = ref<any | null>(null)
+const detailBackMode = ref<Mode>('results')
 const dateLabel = (date: string, time: string) => `${date} ${time}`
 const daysBetween = () => {
   const start = new Date(`${searchForm.value.pickupDate}T00:00:00`)
@@ -262,6 +263,12 @@ const benefits = [
   { icon: Location, title: '多网点取还', text: '全国覆盖，随心取还' },
   { icon: Headset, title: '24h 专属服务', text: '全天候在线支持' },
 ]
+const whySteps = [
+  { icon: Location, title: '全国覆盖', text: '200+ 城市 · 2000+ 网点' },
+  { icon: Search, title: '易预订', text: '快速预订 · 即时确认' },
+  { icon: Van, title: '优质车源', text: '严选车辆 · 安全可靠' },
+  { icon: Check, title: '安心保障', text: '多重保障 · 行程无忧' },
+]
 const quoteLoading = ref(false)
 const quoteRequirement = () => ({
   departure: searchForm.value.pickupCity,
@@ -314,17 +321,20 @@ const loadLatestOrderedQuotes = async () => {
     cars.value = seedCars
   }
 }
+const switchMode = (next: Mode) => {
+  mode.value = next
+  requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+}
 const goResults = async () => {
   await loadQuotes()
-  mode.value = 'results'
-  setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20)
+  switchMode('results')
 }
 const goDetail = (car?: RentalCarView) => {
+  detailBackMode.value = mode.value === 'results' ? 'results' : 'home'
   if (car) {
     cars.value = cars.value.map(item => ({ ...item, selected: item.quote.quoteId === car.quote.quoteId }))
   }
-  mode.value = 'detail'
-  setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20)
+  switchMode('detail')
 }
 const createRentalTripPlan = () => ({
   title: `${searchForm.value.pickupCity}租车出行`,
@@ -356,7 +366,7 @@ const bookNow = async () => {
     latestOrderId.value = result.id
     await rentalApi.payOrder(result.id, { success: true })
     latestOrderDetail.value = await rentalApi.getOrder(result.id)
-    mode.value = 'order'
+    switchMode('order')
     ElMessage.success(`支付成功，订单ID：${result.id}`)
   } finally {
     bookingLoading.value = false
@@ -441,7 +451,7 @@ onMounted(loadLatestOrderedQuotes)
                 <el-option v-for="item in vehicleOptions" :key="item" :label="item" :value="item" />
               </el-select>
             </el-form-item>
-            <el-button class="search-btn" type="primary" :loading="quoteLoading" @click="goResults">
+            <el-button class="search-btn" type="primary" native-type="button" :loading="quoteLoading" @click="goResults">
               <el-icon><Search /></el-icon>搜索车辆
             </el-button>
           </el-form>
@@ -454,7 +464,7 @@ onMounted(loadLatestOrderedQuotes)
         <section class="cars-section">
           <h2>热门车型推荐</h2>
           <div class="car-grid">
-            <article v-for="car in cars" :key="car.name" class="home-car">
+            <article v-for="car in cars" :key="car.name" class="home-car" role="button" tabindex="0" @click="goDetail(car)" @keydown.enter.prevent="goDetail(car)">
               <img :src="car.image" :alt="car.name">
               <div><h3>{{ car.name }}</h3><p><span>{{ car.model.transmission }}</span><span>{{ car.model.seats }} 座</span><span>{{ car.model.energyType }}</span></p><small>{{ car.desc }}</small><strong>¥{{ dailyPrice(car) }} <em>/天起</em></strong></div>
             </article>
@@ -464,10 +474,9 @@ onMounted(loadLatestOrderedQuotes)
         <section class="why-section">
           <h2>为什么选择 PlanGo</h2>
           <div class="why-flow">
-            <article><i></i><b>全国覆盖</b><span>200+ 城市 · 2000+ 网点</span></article><em></em>
-            <article><i></i><b>易预订</b><span>快速预订 · 即时确认</span></article><em></em>
-            <article><i></i><b>优质车源</b><span>严选车辆 · 安全可靠</span></article><em></em>
-            <article><i></i><b>安心保障</b><span>多重保障 · 行程无忧</span></article>
+            <template v-for="(item,index) in whySteps" :key="item.title">
+              <article><i><el-icon><component :is="item.icon" /></el-icon></i><b>{{ item.title }}</b><span>{{ item.text }}</span></article><em v-if="index < whySteps.length - 1"></em>
+            </template>
           </div>
         </section>
       </main>
@@ -482,7 +491,7 @@ onMounted(loadLatestOrderedQuotes)
           <article><span>还车时间</span><b><el-icon><Calendar /></el-icon>{{ orderPreview.returnTime }}</b></article>
           <article><span>行程时长</span><b><el-icon><Clock /></el-icon>{{ orderPreview.tripDays }} 天</b></article>
           <article><span>乘车人数</span><b><el-icon><User /></el-icon>{{ orderPreview.peopleCount }} 人</b></article>
-          <button @click="mode = 'home'"><el-icon><EditPen /></el-icon>修改搜索</button>
+            <button type="button" @click="switchMode('home')"><el-icon><EditPen /></el-icon>修改搜索</button>
         </section>
 
         <section class="results-layout">
@@ -514,7 +523,7 @@ onMounted(loadLatestOrderedQuotes)
                 <div class="price-box">
                   <small>{{ car.selected ? '套餐价' : '单价低至' }}</small>
                   <strong>¥{{ car.selected ? yuan(car.quote.feeBreakdown.totalPriceCent) : dailyPrice(car) }}</strong><span>/{{ car.selected ? `${car.quote.rentalDays}天起` : '天起' }}</span>
-                  <button @click="goDetail(car)">查看详情</button>
+                  <button type="button" @click="goDetail(car)">查看详情</button>
                   <a role="button" @click.stop="togglePriceDetail(car.quote.quoteId)">价格明细{{ expandedQuoteId === car.quote.quoteId ? '⌃' : '⌄' }}</a>
                 </div>
                 <div v-if="expandedQuoteId === car.quote.quoteId" class="inline-fee-detail">
@@ -536,8 +545,8 @@ onMounted(loadLatestOrderedQuotes)
           <aside class="results-side">
             <div class="map-card">
               <div class="route-map">
-                <b class="start">上海虹桥机场 T2 航站楼</b>
-                <b class="end">杭州萧山国际机场</b>
+                <b class="start">{{ orderPreview.pickupSnapshot.poiName }}</b>
+                <b class="end">{{ orderPreview.returnSnapshot.poiName }}</b>
                 <i></i>
               </div>
             </div>
@@ -563,7 +572,7 @@ onMounted(loadLatestOrderedQuotes)
 
     <template v-else-if="mode === 'detail'">
       <main class="detail-main">
-        <button class="back-link" @click="mode = 'results'">‹　返回搜索结果</button>
+        <button class="back-link" type="button" @click="switchMode(detailBackMode)">‹　{{ detailBackMode === 'results' ? '返回搜索结果' : '返回租车首页' }}</button>
         <section class="detail-layout">
           <div class="detail-left">
             <section class="vehicle-hero-card">
@@ -641,8 +650,8 @@ onMounted(loadLatestOrderedQuotes)
               <div class="cost-detail"><h3>费用明细 <small>（预估总价）</small></h3><p><span>车辆租金（{{ selectedQuote.rentalDays }}天）</span><b>¥{{ yuan(selectedFee.rentalFeeCent) }}</b></p><p><span>基础服务费</span><b>¥{{ yuan(selectedFee.baseServiceFeeCent) }}</b></p><p><span>车辆整备费</span><b>¥{{ yuan(selectedFee.vehiclePrepareFeeCent) }}</b></p><p><span>异地还车费</span><b>¥{{ yuan(selectedFee.oneWayFeeCent) }}</b></p><p><span>送车上门费</span><b>¥{{ yuan(selectedFee.deliveryFeeCent) }}</b></p><p><span>{{ selectedProtection.name }}</span><b>¥{{ yuan(protectionFeeCent) }}</b></p><p><span>租车押金</span><b>{{ selectedFee.rentalDepositCent ? `¥${yuan(selectedFee.rentalDepositCent)}` : '可免押' }}</b></p><p><span>违章押金</span><b>¥{{ yuan(selectedFee.violationDepositCent) }}</b></p></div>
               <div class="compare-box"><h3>价格对比 <small>（同车型均价）</small></h3><p class="best"><span>PlanGo <em>推荐</em></span><b>¥866/2天</b></p><p><span>一嗨租车</span><b>¥876/2天</b></p><p><span>神州租车</span><b>¥883/2天</b></p></div>
               <div class="total-box"><span>预估总价</span><strong>¥{{ yuan(payableTotalCent) }}</strong><small>免押门槛：{{ selectedFee.depositFreeThresholdScore }} 分</small><small v-if="latestOrderId">订单ID：{{ latestOrderId }}</small></div>
-              <button class="book-now" :disabled="bookingLoading" @click="bookNow">▣ {{ bookingLoading ? '预订中...' : '立即预订' }}</button>
-              <button class="compare-now">加入对比</button>
+              <button class="book-now" type="button" :disabled="bookingLoading" @click="bookNow">▣ {{ bookingLoading ? '预订中...' : '立即预订' }}</button>
+              <button class="compare-now" type="button">加入对比</button>
               <footer><el-icon><Check /></el-icon>现在预订可免费取消</footer>
             </section>
           </aside>
@@ -652,7 +661,7 @@ onMounted(loadLatestOrderedQuotes)
 
     <template v-else-if="mode === 'order'">
       <main class="detail-main">
-        <button class="back-link" @click="mode = 'results'">‹　返回搜索结果</button>
+        <button class="back-link" type="button" @click="switchMode('results')">‹　返回搜索结果</button>
         <section class="order-detail-page">
           <div class="order-success-card">
             <span><el-icon><Check /></el-icon></span>
@@ -665,7 +674,7 @@ onMounted(loadLatestOrderedQuotes)
             <div class="order-route"><p><i></i><span>取车</span><b>{{ orderPreview.pickupSnapshot.poiName }}<br><em>{{ orderPreview.pickupTime }}</em></b></p><p><i></i><span>还车</span><b>{{ orderPreview.returnSnapshot.poiName }}<br><em>{{ orderPreview.returnTime }}</em></b></p></div>
             <div class="order-meta"><p><span>车型</span><b>{{ selectedCar.name }}</b></p><p><span>保障套餐</span><b>{{ selectedProtection.name }}</b></p><p><span>联系人</span><b>{{ contactForm.name }} {{ contactForm.phone }}</b></p></div>
             <div class="cost-detail"><h3>费用明细</h3><p><span>订单状态</span><b>{{ latestOrderDetail?.orderStatus || 'confirmed' }}</b></p><p><span>支付状态</span><b>{{ latestOrderDetail?.paymentStatus || 'paid' }}</b></p><p><span>预估总价</span><b>¥{{ yuan(latestOrderDetail?.totalPriceCent || payableTotalCent) }}</b></p></div>
-            <button class="book-now" @click="mode = 'detail'">查看车辆详情</button>
+            <button class="book-now" type="button" @click="switchMode('detail')">查看车辆详情</button>
           </section>
         </section>
       </main>
@@ -683,4 +692,254 @@ onMounted(loadLatestOrderedQuotes)
 .modern-search-form :deep(.el-form-item){height:76px;display:flex;flex-direction:column;justify-content:flex-start}.modern-search-form :deep(.el-form-item__label){height:16px;margin:0 0 8px;line-height:16px}.modern-search-form :deep(.el-form-item__content){height:52px;flex:0 0 52px;line-height:52px}.modern-search-form :deep(.el-input),.modern-search-form :deep(.el-select),.modern-search-form :deep(.el-date-editor){height:52px}.modern-search-form :deep(.el-input__wrapper),.modern-search-form :deep(.el-select__wrapper){height:52px;min-height:52px}.modern-search-form>.search-btn{align-self:end}
 .modern-search-form{display:flex;flex-wrap:wrap;align-items:flex-start;gap:18px 22px}.modern-search-form :deep(.city-field){width:160px}.modern-search-form :deep(.oneway-field){width:120px}.modern-search-form :deep(.pickup-field),.modern-search-form :deep(.return-field){width:360px}.modern-search-form :deep(.pickup-date-field),.modern-search-form :deep(.return-date-field){width:150px}.modern-search-form :deep(.pickup-time-field),.modern-search-form :deep(.return-time-field){width:120px}.modern-search-form :deep(.people-field){width:110px}.modern-search-form :deep(.vehicle-field){width:140px}.modern-search-form>.search-btn{width:220px;margin-top:24px}.form-row-break{flex-basis:100%;height:0}
 @media(max-width:1180px){.home-hero{height:auto}.home-hero-inner,.results-layout,.order-detail-page{grid-template-columns:1fr}.home-hero-inner{padding-bottom:82px}.hero-art{display:none}.home-main,.home-hero-inner,.results-main{width:calc(100vw - 40px)}.benefit-row,.car-grid{grid-template-columns:1fr 1fr}.modern-search-form :deep(.pickup-field),.modern-search-form :deep(.return-field){width:calc(50% - 11px)}.summary-bar{height:auto;grid-template-columns:1fr 1fr;padding:18px}.summary-bar article{border-right:0}.results-side{grid-template-columns:1fr 1fr}.map-card{grid-column:1/-1}.map-card+.side-card{margin-top:0;border-radius:12px}.order-detail-card{position:static}}@media(max-width:760px){.hero-copy h1{font-size:36px}.hero-promises,.benefit-row,.car-grid,.why-flow,.summary-bar,.results-side,.inline-fee-detail{grid-template-columns:1fr}.search-card{padding:16px}.search-head{align-items:stretch;flex-direction:column}.search-head :deep(.el-segmented){width:100%}.modern-search-form :deep(.el-form-item),.modern-search-form :deep(.pickup-field),.modern-search-form :deep(.return-field),.modern-search-form>.search-btn{width:100%;margin-top:0}.form-row-break{display:none}.home-car,.result-card{grid-template-columns:1fr;height:auto}.result-card{padding:20px}.result-card.selected{padding:19px}.result-card img{width:100%;height:150px}.price-box{text-align:left}.price-box button{margin-left:0}.sort-row,.category-tabs{flex-wrap:wrap}.result-note{margin-left:0}}
+
+/* Final rental-page layout overrides: keep the newer Element Plus form from being
+   overridden by the older static form styles that still live above. */
+.rental-page .home-hero-inner,
+.rental-page .home-main,
+.rental-page .results-main,
+.rental-page .detail-main {
+  width: min(1440px, calc(100vw - 64px));
+}
+
+.rental-page .modern-search-form {
+  display: grid;
+  grid-template-columns: 160px 120px minmax(220px, 1fr) minmax(220px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.rental-page .modern-search-form :deep(.el-form-item) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.rental-page .modern-search-form :deep(.city-field),
+.rental-page .modern-search-form :deep(.oneway-field),
+.rental-page .modern-search-form :deep(.pickup-field),
+.rental-page .modern-search-form :deep(.return-field),
+.rental-page .modern-search-form :deep(.pickup-date-field),
+.rental-page .modern-search-form :deep(.pickup-time-field),
+.rental-page .modern-search-form :deep(.return-date-field),
+.rental-page .modern-search-form :deep(.return-time-field),
+.rental-page .modern-search-form :deep(.people-field),
+.rental-page .modern-search-form :deep(.vehicle-field) {
+  width: auto;
+}
+
+.rental-page .form-row-break {
+  display: none;
+}
+
+.rental-page .modern-search-form :deep(.pickup-date-field),
+.rental-page .modern-search-form :deep(.pickup-time-field),
+.rental-page .modern-search-form :deep(.return-date-field),
+.rental-page .modern-search-form :deep(.return-time-field),
+.rental-page .modern-search-form :deep(.people-field),
+.rental-page .modern-search-form :deep(.vehicle-field),
+.rental-page .modern-search-form > .search-btn {
+  grid-column: span 1;
+}
+
+.rental-page .modern-search-form > .search-btn {
+  width: 100%;
+  height: 52px;
+  margin-top: 24px;
+  align-self: start;
+}
+
+.rental-page .summary-bar {
+  height: auto;
+  min-height: 96px;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) 152px;
+  gap: 14px;
+}
+
+.rental-page .summary-bar article {
+  min-width: 0;
+}
+
+.rental-page .summary-bar b,
+.rental-page .route-map b,
+.rental-page .order-route b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rental-page .result-card {
+  grid-template-columns: 280px minmax(0, 1fr) 156px;
+}
+
+.rental-page .cars-section {
+  margin-top: 24px;
+  margin-bottom: 34px;
+}
+
+.rental-page .car-grid {
+  align-items: stretch;
+}
+
+.rental-page .home-car {
+  height: auto;
+  min-height: 282px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.rental-page .home-car:hover,
+.rental-page .home-car:focus-visible {
+  border-color: #93b7ee;
+  box-shadow: 0 18px 42px rgba(24, 64, 113, .12);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.rental-page .home-car img {
+  width: 100%;
+  height: 138px;
+  object-fit: contain;
+  object-position: center;
+  mix-blend-mode: normal;
+  filter: drop-shadow(0 14px 16px rgba(24, 64, 113, .12));
+  background: linear-gradient(180deg, #f7fbff, #eef5fb);
+}
+
+.rental-page .home-car h3 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.2;
+  word-break: keep-all;
+}
+
+.rental-page .home-car p {
+  min-height: 28px;
+  margin: 8px 0;
+}
+
+.rental-page .home-car small {
+  min-height: 42px;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+
+.rental-page .home-car strong {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  line-height: 1.1;
+  margin-top: auto;
+}
+
+.rental-page .home-car strong em {
+  white-space: nowrap;
+}
+
+.rental-page .why-section {
+  clear: both;
+  margin-top: 10px;
+}
+
+.rental-page .why-flow i {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 27px;
+}
+
+.rental-page .why-flow i .el-icon {
+  font-size: 27px;
+}
+
+.rental-page .inline-fee-detail {
+  grid-column: 1 / -1;
+}
+
+.rental-page .detail-layout {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.rental-page .vehicle-stage {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.rental-page .vehicle-stage img {
+  max-width: calc(100% - 28px);
+}
+
+@media (max-width: 1180px) {
+  .rental-page .home-hero-inner,
+  .rental-page .home-main,
+  .rental-page .results-main,
+  .rental-page .detail-main {
+    width: calc(100vw - 40px);
+  }
+
+  .rental-page .modern-search-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rental-page .results-layout,
+  .rental-page .detail-layout,
+  .rental-page .order-detail-page {
+    grid-template-columns: 1fr;
+  }
+
+  .rental-page .summary-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .rental-page .home-hero-inner,
+  .rental-page .home-main,
+  .rental-page .results-main,
+  .rental-page .detail-main {
+    width: calc(100vw - 24px);
+  }
+
+  .rental-page .modern-search-form,
+  .rental-page .summary-bar,
+  .rental-page .result-card,
+  .rental-page .home-car,
+  .rental-page .detail-info-grid,
+  .rental-page .bottom-guarantees,
+  .rental-page .feature-strip,
+  .rental-page .plan-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rental-page .summary-bar article {
+    border-right: 0;
+    padding-right: 0;
+  }
+
+  .rental-page .home-car img {
+    width: 100%;
+    height: 150px;
+  }
+
+  .rental-page .vehicle-hero-card {
+    grid-template-columns: 1fr;
+  }
+
+  .rental-page .vehicle-stage {
+    min-height: 180px;
+  }
+
+  .rental-page .vehicle-stage img {
+    right: 16px;
+    width: calc(100% - 32px);
+    height: 170px;
+  }
+}
 </style>

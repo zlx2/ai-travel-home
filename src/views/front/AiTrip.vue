@@ -39,9 +39,6 @@ const NODE_TO_STAGE:Record<string,number>={
   'calculating-budget':3,'prefetching-next':3,
   'finalizing':4,
 }
-// 每个步骤最短展示时间（避免后端快节奏阶段一闪而过）
-const STAGE_MIN_DWELL_MS=1200
-let stageEntryTime=0
 let previewTimer:number|undefined
 const showLongWaitHint30=ref(false)
 const showLongWaitHint90=ref(false)
@@ -720,15 +717,7 @@ const startDayBuilding=async()=>{
       if(event.label)generateProgressLabel.value=event.label
       if(event.node){
         const s=NODE_TO_STAGE[event.node]
-        if(s!==undefined&&s>loadingStageIndex.value){
-          const now=Date.now()
-          const dwelled=now-stageEntryTime>=STAGE_MIN_DWELL_MS
-          const isLast=s===loadingStages.length-1
-          if(dwelled||isLast){
-            loadingStageIndex.value=s
-            stageEntryTime=now
-          }
-        }
+        if(s!==undefined&&s>loadingStageIndex.value)loadingStageIndex.value=s
       }
     },extras)
     assertFirstDayGenerated(data.tripPlan)
@@ -758,7 +747,6 @@ function startGenerateTimer(){
   generateProgress.value=1
   generateProgressLabel.value='开始生成行程'
   loadingStageIndex.value=0
-  stageEntryTime=Date.now()
   showLongWaitHint30.value=false
   showLongWaitHint90.value=false
   generateTimer=window.setInterval(()=>{

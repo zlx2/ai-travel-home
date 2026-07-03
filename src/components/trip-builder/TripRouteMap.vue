@@ -424,6 +424,7 @@ onBeforeUnmount(()=>{
         </button>
         <template v-if="!toolbarCollapsed">
           <button class="tool-chip" :class="{ active: activeNearbyType==='food' }" :disabled="nearbyLoading" @click="searchNearby('food')"><span class="tool-dot food"></span>美食</button>
+          <button class="tool-chip" :class="{ active: activeNearbyType==='hotel' }" :disabled="nearbyLoading" @click="searchNearby('hotel')"><span class="tool-dot hotel"></span>酒店</button>
         </template>
         <button class="tool-chip toggle-chip" @click="toolbarCollapsed=!toolbarCollapsed">{{ toolbarCollapsed ? '更多' : '收起' }}</button>
       </section>

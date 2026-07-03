@@ -330,18 +330,24 @@ const fallbackQuoteOptions=():RentalQuote[]=>{
 const yuan=(cent:number|undefined)=>Math.round((cent||0)/100)
 const pickupTimeLabel=(requirement:Requirement)=>requirement.travelDate?`${requirement.travelDate} 10:00`:'到达后交车'
 const returnTimeLabel=(requirement:Requirement,days:number)=>requirement.travelDate?`${requirement.travelDate} +${days}天`:`${days}天后还车`
-const quoteTone=(index:number):RentalQuote['tone']=>(['blue','teal','gold'] as const)[index%3]
+const splitQuoteText=(value?:string)=>String(value||'')
+  .split(/[,，|]/)
+  .map(item=>item.trim())
+  .filter(Boolean)
+const quoteToneFromLabel=(label:string):RentalQuote['tone']=>{
+  if(label.includes('经济'))return 'teal'
+  if(label.includes('舒适'))return 'gold'
+  return 'blue'
+}
 const quoteToView=(quote:any,index:number):RentalQuote=>{
   const dayCount=Number(quote.rentalDays||activeRequirement.value.days||1)
   const modelName=quote.seriesFullName||quote.displayName||quote.groupName||'租车套餐'
-  const tags=String(quote.travelTags||quote.featureTags||'自动挡')
-    .split(/[,，]/)
-    .map(item=>item.trim())
-    .filter(Boolean)
+  const tags=splitQuoteText(quote.featureTags||quote.travelTags||'自动挡')
     .slice(0,3)
+  const services=splitQuoteText(quote.includedServices)
   return {
     id:String(quote.quoteId||quote.vehicleGroupId||index),
-    label:index===0?'推荐套餐':index===1?'经济优选':'舒适升级',
+    label:quote.groupName||quote.vehicleClass||'租车套餐',
     name:quote.groupName||quote.displayName||modelName,
     subtitle:modelName,
     seats:Number(quote.seats||quote.seatsMax||5),
@@ -353,10 +359,24 @@ const quoteToView=(quote:any,index:number):RentalQuote=>{
     returnTime:returnTimeLabel(activeRequirement.value,dayCount),
     totalPrice:yuan(quote.feeBreakdown?.totalPriceCent),
     dayCount,
-    serviceTags:['送车接人','基础保障','免费取消'],
-    tone:quoteTone(index),
+    serviceTags:services.length?services.slice(0,4):['送车接人','基础保障','免费取消'],
+    tone:'blue',
     raw:quote,
   }
+}
+const decorateRentalQuotes=(quotes:RentalQuote[])=>{
+  if(!quotes.length)return quotes
+  const cheapestIndex=quotes.reduce((best,quote,index)=>quote.totalPrice<quotes[best].totalPrice?index:best,0)
+  const recommendedIndex=cheapestIndex===0&&quotes.length>1?1:0
+  const upgradeIndex=quotes.reduce((best,quote,index)=>{
+    if(index===cheapestIndex||index===recommendedIndex)return best
+    if(best<0)return index
+    return quote.totalPrice>quotes[best].totalPrice?index:best
+  },-1)
+  return quotes.map((quote,index)=>{
+    const label=index===cheapestIndex?'经济优选':index===recommendedIndex?'推荐首选':index===upgradeIndex?'舒适升级':quote.label
+    return {...quote,label,tone:quoteToneFromLabel(label)}
+  })
 }
 
 const inferArrivalText=()=>{
@@ -407,7 +427,7 @@ const loadRentalContext=async()=>{
     if(result.value&&data.requirement)result.value={...result.value,requirement:data.requirement}
     if(data.requirement)Object.assign(form,data.requirement)
     syncRentalDetailDefaults()
-    const mapped=(data.quoteOptions||[]).map(quoteToView)
+    const mapped=decorateRentalQuotes((data.quoteOptions||[]).map(quoteToView))
     quoteOptions.value=mapped
     selectedQuoteId.value=quoteOptions.value[0]?.id||''
     selectedBackendQuote.value=quoteOptions.value[0]?.raw||null

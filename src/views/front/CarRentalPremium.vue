@@ -20,6 +20,9 @@ type FeeBreakdown = {
 }
 type RentalQuoteView = {
   quoteId: string
+  rentalCity?: string
+  citycode?: string
+  adcode?: string
   vehicleGroupId: number
   groupCode: string
   groupName: string
@@ -178,18 +181,24 @@ const sortOptions = [
   { value: 'scoreDesc', label: '评分最高' },
 ] as const
 const moreFilterOptions = ['可免押', '免费取消', '含基础保险', '24h 救援']
+const DEFAULT_RENTAL_CITY = '成都'
+const dateOffset = (days: number) => {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
 const searchForm = ref({
   pickupCity: '',
   returnCity: '',
   pickupLocation: '',
   returnLocation: '',
-  pickupDate: '2025-06-01',
+  pickupDate: dateOffset(7),
   pickupTime: '10:00',
-  returnDate: '2025-06-03',
+  returnDate: dateOffset(9),
   returnTime: '10:00',
   peopleCount: 2,
   vehiclePreference: '不限车型',
-  isOneWay: true,
+  isOneWay: false,
 })
 const vehicleOptionMeta: Record<string, string> = {
   '不限车型': '全部可租车型',
@@ -520,8 +529,8 @@ const searchNearbyStores = async (kind: 'pickup' | 'return', silent = false) => 
 const searchPickupStores = (keyword: string) => searchStores('pickup', keyword)
 const searchReturnStores = (keyword: string) => searchStores('return', keyword)
 const contactForm = ref({
-  name: '',
-  phone: '',
+  name: '课程演示用户',
+  phone: '13800000000',
   remark: '',
 })
 const protectionPackages = [
@@ -548,7 +557,7 @@ const quoteToCar = (quote: any, index: number): RentalCarView => {
   const fallback = seedCars[index % seedCars.length]
   const profile = rentalCardProfiles[index % rentalCardProfiles.length]
   const fee = quote.feeBreakdown || fallback.quote.feeBreakdown
-  const modelName = quote.displayName || quote.vehicleName || quote.groupName || profile.name
+  const modelName = quote.seriesFullName || quote.priceSnapshot?.vehicleModelName || quote.vehicleName || quote.displayName || quote.groupName || profile.name
   const featureTags = String(quote.featureTags || quote.travelTags || '')
     .split(/[,，]/)
     .map(item => item.trim())
@@ -567,7 +576,7 @@ const quoteToCar = (quote: any, index: number): RentalCarView => {
       series: quote.series || quote.groupName || profile.series,
       seriesFullName: modelName,
       transmission: quote.transmission || profile.transmission,
-      seats: quote.seatsMax || quote.seatsMin || profile.seats,
+      seats: quote.seats || quote.seatsMax || quote.seatsMin || profile.seats,
       luggage: quote.luggage || profile.luggage,
       energyType: energyText(quote.energyType) || profile.energyType,
     },
@@ -592,6 +601,8 @@ const selectedCar = computed(() => cars.value.find(item => item.selected) || car
 const selectedQuote = computed(() => selectedCar.value.quote)
 const selectedFee = computed(() => selectedQuote.value.feeBreakdown)
 const dailyPrice = (car: RentalCarView) => Math.round(yuan(car.quote.feeBreakdown.rentalFeeCent) / car.quote.rentalDays)
+const effectivePickupCity = () => normalizeCityName(searchForm.value.pickupCity) || selectedQuote.value?.rentalCity || DEFAULT_RENTAL_CITY
+const effectiveReturnCity = () => searchForm.value.isOneWay ? normalizeCityName(searchForm.value.returnCity) || effectivePickupCity() : effectivePickupCity()
 const matchCategory = (car: RentalCarView, category: string) => {
   if (category === '全部') return true
   if (category === '新能源') return car.model.energyType.includes('电') || car.quote.groupCode?.includes('EV')
@@ -621,7 +632,7 @@ const togglePriceDetail = (quoteId: string) => {
 const orderPreview = computed(() => ({
   orderStatus: 'pending',
   paymentStatus: 'unpaid',
-  rentalCity: searchForm.value.pickupCity,
+  rentalCity: effectivePickupCity(),
   tripDays: selectedQuote.value.rentalDays,
   peopleCount: searchForm.value.peopleCount,
   mileageText: selectedQuote.value.dailyMileageLimitKm ? `约 ${selectedQuote.value.dailyMileageLimitKm * selectedQuote.value.rentalDays} 公里` : '约 200 公里',
@@ -646,8 +657,8 @@ const benefits = [
 ]
 const quoteLoading = ref(false)
 const quoteRequirement = () => ({
-  departure: searchForm.value.pickupCity,
-  destination: searchForm.value.returnCity,
+  departure: effectivePickupCity(),
+  destination: effectiveReturnCity(),
   days: daysBetween(),
   peopleCount: searchForm.value.peopleCount,
   budget: 2000,
@@ -659,14 +670,14 @@ const quoteRequirement = () => ({
   preferences: ['租车出行', searchForm.value.vehiclePreference],
   rentalRequirement: {
     needRental: true,
-    rentalStartCity: searchForm.value.pickupCity,
-    rentalEndCity: searchForm.value.returnCity,
+    rentalStartCity: effectivePickupCity(),
+    rentalEndCity: effectiveReturnCity(),
     pickupLocation: searchForm.value.pickupLocation,
     returnLocation: searchForm.value.returnLocation,
     pickupMode: 'AIRPORT',
     returnMode: 'AIRPORT',
-    pickupCity: searchForm.value.pickupCity,
-    returnCity: searchForm.value.returnCity,
+    pickupCity: effectivePickupCity(),
+    returnCity: effectiveReturnCity(),
     vehiclePreference: searchForm.value.vehiclePreference,
     rentalDays: daysBetween(),
     deliveryRequired: false,
@@ -688,6 +699,25 @@ const loadQuotes = async () => {
     quoteLoading.value = false
   }
 }
+const loadDefaultCityQuotes = async () => {
+  const originalPickupCity = searchForm.value.pickupCity
+  const originalReturnCity = searchForm.value.returnCity
+  searchForm.value.pickupCity = DEFAULT_RENTAL_CITY
+  searchForm.value.returnCity = DEFAULT_RENTAL_CITY
+  ensureCityOption(DEFAULT_RENTAL_CITY)
+  syncPickupCityPath()
+  syncReturnCityPath()
+  await loadQuotes()
+  if (!cars.value.length) {
+    searchForm.value.pickupCity = originalPickupCity
+    searchForm.value.returnCity = originalReturnCity
+  }
+}
+const loadHomeQuotes = async () => {
+  await loadQuotes()
+  if (!cars.value.length && effectivePickupCity() !== DEFAULT_RENTAL_CITY) await loadDefaultCityQuotes()
+  if (!cars.value.length) await loadLatestOrderedQuotes()
+}
 const loadLatestOrderedQuotes = async () => {
   try {
     const data = await rentalApi.latestOrderedQuotes()
@@ -697,6 +727,14 @@ const loadLatestOrderedQuotes = async () => {
   } catch {
     cars.value = []
   }
+}
+const ensureBookableContext = () => {
+  if (!searchForm.value.pickupCity) searchForm.value.pickupCity = selectedQuote.value?.rentalCity || DEFAULT_RENTAL_CITY
+  if (!searchForm.value.isOneWay || !searchForm.value.returnCity) searchForm.value.returnCity = searchForm.value.pickupCity
+  ensureCityOption(searchForm.value.pickupCity)
+  ensureCityOption(searchForm.value.returnCity)
+  syncPickupCityPath()
+  syncReturnCityPath()
 }
 const categoryFromVehicle = (value: string) => value && value !== '不限车型' ? value : '全部'
 const applyVehicleFilter = () => {
@@ -725,7 +763,8 @@ const goResults = async () => {
 const viewAllCars = async () => {
   searchForm.value.vehiclePreference = '不限车型'
   cars.value = []
-  await loadLatestOrderedQuotes()
+  if (searchForm.value.pickupCity) await loadQuotes()
+  if (!cars.value.length) await loadLatestOrderedQuotes()
   if (!cars.value.length) {
     ElMessage.warning('暂未获取到可用车型，请稍后重试')
     return
@@ -739,14 +778,19 @@ const applyMoreFilter = (label: string) => {
 }
 const goDetail = (car?: RentalCarView) => {
   detailBackMode.value = mode.value === 'results' ? 'results' : 'home'
+  if (!car && !selectedCar.value) {
+    ElMessage.warning('暂无可预订车型，请先搜索可用车型')
+    return
+  }
   if (car) {
     cars.value = cars.value.map(item => ({ ...item, selected: item.quote.quoteId === car.quote.quoteId }))
   }
+  ensureBookableContext()
   switchMode('detail')
 }
 const createRentalTripPlan = () => ({
-  title: `${searchForm.value.pickupCity}租车出行`,
-  destination: searchForm.value.returnCity,
+  title: `${effectivePickupCity()}租车出行`,
+  destination: effectiveReturnCity(),
   days: selectedQuote.value.rentalDays,
   summary: `${selectedCar.value.name} ${selectedQuote.value.rentalDays}天租车订单`,
   dailyPlans: [],
@@ -754,6 +798,7 @@ const createRentalTripPlan = () => ({
   tips: ['取车前请携带身份证、驾驶证和信用卡。'],
 })
 const bookNow = async () => {
+  ensureBookableContext()
   if (!contactForm.value.name.trim() || !contactForm.value.phone.trim()) {
     ElMessage.warning('请先填写联系人和手机号')
     return
@@ -776,6 +821,8 @@ const bookNow = async () => {
     latestOrderDetail.value = await rentalApi.getOrder(result.id)
     switchMode('order')
     ElMessage.success(`支付成功，订单ID：${result.id}`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '预订失败，请稍后重试')
   } finally {
     bookingLoading.value = false
   }
@@ -794,10 +841,10 @@ watch(() => searchForm.value.pickupCity, city => {
   syncPickupCityPath()
   searchStores('pickup')
   if (!searchForm.value.isOneWay) {
-    searchForm.value.returnCity = ''
+    searchForm.value.returnCity = name
     searchForm.value.returnLocation = ''
-    returnCityPath.value = []
     returnLocationOptions.value = []
+    syncReturnCityPath()
   }
 })
 watch(() => searchForm.value.returnCity, city => {
@@ -816,10 +863,10 @@ watch(() => searchForm.value.returnCity, city => {
 })
 watch(() => searchForm.value.isOneWay, value => {
   if (!value) {
-    searchForm.value.returnCity = ''
+    searchForm.value.returnCity = searchForm.value.pickupCity
     searchForm.value.returnLocation = ''
-    returnCityPath.value = []
     returnLocationOptions.value = []
+    syncReturnCityPath()
   } else {
     if (searchForm.value.returnCity) searchStores('return')
   }
@@ -828,8 +875,12 @@ watch(() => searchForm.value.pickupLocation, value => {
   if (!searchForm.value.isOneWay) searchForm.value.returnLocation = ''
 })
 onMounted(async () => {
+  searchForm.value.pickupCity = DEFAULT_RENTAL_CITY
+  searchForm.value.returnCity = DEFAULT_RENTAL_CITY
   ensureCityOption(searchForm.value.pickupCity)
   ensureCityOption(searchForm.value.returnCity)
+  syncPickupCityPath()
+  syncReturnCityPath()
   loadChinaCities()
   const city = await locateCurrentCity('pickup', true)
   if (city) {
@@ -837,7 +888,7 @@ onMounted(async () => {
     if (!pickupLocationOptions.value.length) await searchStores('pickup')
     const firstPickup = pickupLocationOptions.value[0]
     if (firstPickup) searchForm.value.pickupLocation = firstPickup.name
-    if (!searchForm.value.returnCity) {
+    if (!searchForm.value.isOneWay || !searchForm.value.returnCity) {
       searchForm.value.returnCity = searchForm.value.pickupCity
       syncReturnCityPath()
     }
@@ -848,7 +899,7 @@ onMounted(async () => {
     searchStores('pickup')
     searchStores('return')
   }
-  await loadLatestOrderedQuotes()
+  await loadHomeQuotes()
 })
 </script>
 

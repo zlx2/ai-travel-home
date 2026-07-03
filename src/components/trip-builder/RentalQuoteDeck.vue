@@ -17,6 +17,7 @@ const toneText: Record<RentalQuote['tone'], string> = {
   gold: '舒适升级',
 }
 const toneClass = (quote: RentalQuote) => quote.tone || 'blue'
+const ribbonText = (quote: RentalQuote) => quote.label || toneText[toneClass(quote)]
 const vehicleImage = (quote: RentalQuote, index: number) => quote.raw?.imageUrl || quote.raw?.coverImage || carImages[index % carImages.length]
 const displayedQuotes = computed(() => props.quotes.slice(0, 3))
 const visibleTags = (quote: RentalQuote) => [
@@ -24,7 +25,14 @@ const visibleTags = (quote: RentalQuote) => [
   `${quote.luggage} 行李箱`,
   ...quote.tags,
 ].filter(Boolean).slice(0, 4)
-const reasonText = (quote: RentalQuote) => quote.serviceTags?.[0] || quote.raw?.recommendReason || quote.raw?.featureTags || '匹配你的路线、人数与预算，适合本次自驾行程。'
+const reasonText = (quote: RentalQuote) =>
+  quote.raw?.recommendReason ||
+  quote.raw?.description ||
+  quote.raw?.summary ||
+  quote.raw?.featureTags ||
+  quote.raw?.travelTags ||
+  quote.serviceTags?.[0] ||
+  '匹配你的路线、人数与预算，适合本次自驾行程。'
 </script>
 
 <template>
@@ -39,7 +47,7 @@ const reasonText = (quote: RentalQuote) => quote.serviceTags?.[0] || quote.raw?.
         :class="[{ selected: quote.id === selectedId }, toneClass(quote)]"
         @click="emit('select', quote.id)"
       >
-        <div class="quote-ribbon">{{ toneText[toneClass(quote)] }}</div>
+        <div class="quote-ribbon">{{ ribbonText(quote) }}</div>
         <span class="selected-check" :class="{ on: quote.id === selectedId }"><el-icon><Check /></el-icon></span>
 
         <div class="rq-vehicle-row">

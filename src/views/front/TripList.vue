@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Calendar, Coin, Delete, MagicStick, Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { tripApi } from '../../api'
 import type { Trip } from '../../types'
 import { homeImage } from '../../utils/homeImages'

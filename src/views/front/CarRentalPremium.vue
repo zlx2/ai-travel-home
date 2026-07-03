@@ -546,6 +546,7 @@ const bookingLoading = ref(false)
 const latestOrderId = ref<number | null>(null)
 const latestOrderDetail = ref<any | null>(null)
 const detailBackMode = ref<Mode>('results')
+const PENDING_ALIPAY_ORDER_KEY = 'plango:rental:pendingAlipayOrderId'
 const dateLabel = (date: string, time: string) => `${date} ${time}`
 const daysBetween = () => {
   const start = new Date(`${searchForm.value.pickupDate}T00:00:00`)
@@ -797,6 +798,36 @@ const createRentalTripPlan = () => ({
   budgetSummary: { transportCost: yuan(payableTotalCent.value), totalEstimatedCost: yuan(payableTotalCent.value) },
   tips: ['取车前请携带身份证、驾驶证和信用卡。'],
 })
+const submitAlipayForm = (formHtml: string) => {
+  const container = document.createElement('div')
+  container.style.display = 'none'
+  container.innerHTML = formHtml
+  document.body.appendChild(container)
+  const form = container.querySelector('form') as HTMLFormElement | null
+  if (!form) {
+    document.body.removeChild(container)
+    throw new Error('支付宝支付表单为空')
+  }
+  form.submit()
+}
+const refreshReturnedAlipayOrder = async () => {
+  const params = new URLSearchParams(window.location.search)
+  const pendingId = Number(window.localStorage.getItem(PENDING_ALIPAY_ORDER_KEY) || 0)
+  if (!params.has('paymentReturn') || !pendingId) return
+  try {
+    latestOrderId.value = pendingId
+    latestOrderDetail.value = await rentalApi.getOrder(pendingId)
+    switchMode('order')
+    const paid = latestOrderDetail.value?.paymentStatus === 'paid'
+    ElMessage[paid ? 'success' : 'warning'](paid ? '支付宝沙箱支付已确认' : '已从支付宝返回，正在等待异步通知确认支付状态')
+    if (paid) window.localStorage.removeItem(PENDING_ALIPAY_ORDER_KEY)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '支付返回后查询订单失败')
+  }
+}
+const isLatestOrderPaid = () => latestOrderDetail.value?.paymentStatus === 'paid'
+const latestOrderStatusText = () => isLatestOrderPaid() ? '预订成功' : '订单已创建'
+const latestPaymentStatusText = () => isLatestOrderPaid() ? '已支付' : '待支付确认'
 const bookNow = async () => {
   ensureBookableContext()
   if (!contactForm.value.name.trim() || !contactForm.value.phone.trim()) {
@@ -817,10 +848,10 @@ const bookNow = async () => {
       remark: contactForm.value.remark.trim() || `${selectedCar.value.name} 租车预订`,
     })
     latestOrderId.value = result.id
-    await rentalApi.payOrder(result.id, { success: true })
-    latestOrderDetail.value = await rentalApi.getOrder(result.id)
-    switchMode('order')
-    ElMessage.success(`支付成功，订单ID：${result.id}`)
+    window.localStorage.setItem(PENDING_ALIPAY_ORDER_KEY, String(result.id))
+    const pay = await rentalApi.alipayPagePay(result.id)
+    ElMessage.success('订单已创建，正在跳转支付宝沙箱收银台')
+    submitAlipayForm(pay.formHtml)
   } catch (error: any) {
     ElMessage.error(error?.message || '预订失败，请稍后重试')
   } finally {
@@ -900,6 +931,7 @@ onMounted(async () => {
     searchStores('return')
   }
   await loadHomeQuotes()
+  await refreshReturnedAlipayOrder()
 })
 </script>
 
@@ -1286,15 +1318,15 @@ onMounted(async () => {
         <section class="order-detail-page">
           <div class="order-success-card">
             <span><el-icon><Check /></el-icon></span>
-            <h1>预订成功</h1>
-            <p>沙箱支付已模拟完成，订单已确认。</p>
+            <h1>{{ latestOrderStatusText() }}</h1>
+            <p>{{ isLatestOrderPaid() ? '支付宝沙箱支付已确认，订单已完成。' : '已从支付宝返回，等待异步通知确认支付状态。' }}</p>
             <strong>订单ID：{{ latestOrderId }}</strong>
           </div>
           <section class="order-card order-detail-card">
-            <header><h2>订单详情</h2><a>已支付</a></header>
+            <header><h2>订单详情</h2><a>{{ latestPaymentStatusText() }}</a></header>
             <div class="order-route"><p><i></i><span>取车</span><b>{{ orderPreview.pickupSnapshot.poiName }}<br><em>{{ orderPreview.pickupTime }}</em></b></p><p><i></i><span>还车</span><b>{{ orderPreview.returnSnapshot.poiName }}<br><em>{{ orderPreview.returnTime }}</em></b></p></div>
             <div class="order-meta"><p><span>车型</span><b>{{ selectedCar.name }}</b></p><p><span>保障套餐</span><b>{{ selectedProtection.name }}</b></p><p><span>联系人</span><b>{{ contactForm.name }} {{ contactForm.phone }}</b></p></div>
-            <div class="cost-detail"><h3>费用明细</h3><p><span>订单状态</span><b>{{ latestOrderDetail?.orderStatus || 'confirmed' }}</b></p><p><span>支付状态</span><b>{{ latestOrderDetail?.paymentStatus || 'paid' }}</b></p><p><span>预估总价</span><b>¥{{ yuan(latestOrderDetail?.totalPriceCent || payableTotalCent) }}</b></p></div>
+            <div class="cost-detail"><h3>费用明细</h3><p><span>订单状态</span><b>{{ latestOrderDetail?.orderStatus || 'pending' }}</b></p><p><span>支付状态</span><b>{{ latestOrderDetail?.paymentStatus || 'unpaid' }}</b></p><p><span>预估总价</span><b>¥{{ yuan(latestOrderDetail?.totalPriceCent || payableTotalCent) }}</b></p></div>
             <button class="book-now" type="button" @click="switchMode('detail')">查看车辆详情</button>
           </section>
         </section>

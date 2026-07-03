@@ -1,291 +1,166 @@
 <script setup lang="ts">
-import { Calendar, EditPen, Location, Money, Promotion, User } from '@element-plus/icons-vue'
+import { ArrowRight, Calendar, EditPen, Location, Money, Promotion, User } from '@element-plus/icons-vue'
 import type { Requirement } from '../../types'
 
-defineProps<{ requirement:Requirement; routeMode:string; hasRental:boolean }>()
-const emit=defineEmits<{ edit:[]; continue:[] }>()
+defineProps<{ requirement: Requirement; routeMode: string; hasRental: boolean }>()
+const emit = defineEmits<{ edit: []; continue: [] }>()
 </script>
 
 <template>
   <section class="summary-bar">
-    <div class="summary-state">
-      <span class="status-dot"></span>
-      <span>已理解需求</span>
-    </div>
-
     <div class="summary-body">
-      <div class="info-chip">
-        <el-icon><Location/></el-icon>
-        <span>{{ requirement.destination || '待确认' }}</span>
-      </div>
-      <span class="chip-sep"></span>
-      <div class="info-chip">
-        <el-icon><Calendar/></el-icon>
-        <span>{{ requirement.days }} 天</span>
-      </div>
-      <span class="chip-sep"></span>
-      <div class="info-chip">
-        <el-icon><User/></el-icon>
-        <span>{{ requirement.peopleCount }} 人</span>
-      </div>
-      <span class="chip-sep"></span>
-      <div class="info-chip wide">
-        <el-icon><Promotion/></el-icon>
-        <span>{{ requirement.preferences.join(' · ') || '轻松探索' }}</span>
-      </div>
-      <span class="chip-sep"></span>
-      <div class="info-chip">
-        <el-icon><Money/></el-icon>
-        <span>≤ ¥{{ requirement.budget }}</span>
-      </div>
+      <article>
+        <el-icon><Location /></el-icon>
+        <span>目的地</span>
+        <b>{{ requirement.destination || '待确认' }}</b>
+      </article>
+      <article>
+        <el-icon><Calendar /></el-icon>
+        <span>行程天数</span>
+        <b>{{ requirement.days }} 天</b>
+      </article>
+      <article>
+        <el-icon><User /></el-icon>
+        <span>出行人数</span>
+        <b>{{ requirement.peopleCount }} 人</b>
+      </article>
+      <article class="wide">
+        <el-icon><Promotion /></el-icon>
+        <span>出行偏好</span>
+        <b>{{ requirement.preferences.join(' · ') || '轻松探索' }}</b>
+      </article>
+      <article>
+        <el-icon><Money /></el-icon>
+        <span>预算范围</span>
+        <b>¥{{ requirement.budget }} 内</b>
+      </article>
     </div>
-
-    <div v-if="hasRental" class="route-chip">{{ routeMode }}</div>
 
     <div class="summary-actions">
-      <el-button class="action-edit" text @click="emit('edit')">
-        <el-icon><EditPen/></el-icon>调整需求
-      </el-button>
-      <el-button class="action-primary" type="primary" @click="emit('continue')">继续生成</el-button>
+      <button class="action-edit" type="button" @click="emit('edit')">
+        <el-icon><EditPen /></el-icon>调整需求
+      </button>
+      <button class="action-primary" type="button" @click="emit('continue')">
+        继续生成行程 <el-icon><ArrowRight /></el-icon>
+      </button>
     </div>
   </section>
 </template>
 
 <style scoped>
 .summary-bar {
-  display: flex;
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 362px;
+  gap: 20px;
   align-items: center;
-  gap: 0;
-  padding: 0 20px;
-  min-height: 72px;
-  background: #fff;
-  border: 1px solid #eaf0f6;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
-  overflow: hidden;
-  transition: box-shadow 0.2s ease;
+  padding: 0 22px 0 24px;
+  border: 1px solid #e2ebf7;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 16px 38px rgba(30, 69, 118, .11);
 }
 
-.summary-bar:hover {
-  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.07);
-}
-
-/* ── 左侧状态 ── */
-.summary-state {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-right: 20px;
-  color: #059669;
-  font-size: 14px;
-  font-weight: 700;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
-  flex-shrink: 0;
-}
-
-/* ── 中间信息区域 ── */
 .summary-body {
-  display: flex;
-  align-items: center;
-  gap: 0;
   min-width: 0;
-  overflow-x: auto;
-  flex: 1;
-  padding: 10px 0;
-  scrollbar-width: none;
-}
-.summary-body::-webkit-scrollbar { display: none; }
-
-.info-chip {
-  display: flex;
+  display: grid;
+  grid-template-columns: 140px 140px 140px minmax(260px, 1fr) 150px;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: background 0.15s ease;
 }
 
-.info-chip:hover {
-  background: #f1f5f9;
+.summary-body article {
+  min-width: 0;
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-rows: 22px 28px;
+  gap: 0 10px;
+  align-items: center;
+  padding: 0 22px;
+  border-right: 1px solid #e2eaf5;
 }
 
-.info-chip .el-icon {
-  width: 16px;
-  height: 16px;
-  color: #8a9bb0;
-  flex-shrink: 0;
+.summary-body article:first-child {
+  padding-left: 0;
 }
 
-.info-chip span {
+.summary-body article:last-child {
+  border-right: 0;
+}
+
+.summary-body .el-icon {
+  grid-row: 1 / span 2;
+  color: #4c8cff;
+  font-size: 22px;
+}
+
+.summary-body article:nth-child(4) .el-icon,
+.summary-body article:nth-child(5) .el-icon {
+  color: #1ba792;
+}
+
+.summary-body span {
+  color: #6b7b92;
   font-size: 13px;
-  color: #1e293b;
-  font-weight: 500;
 }
 
-.info-chip.wide span {
-  max-width: 200px;
+.summary-body b {
+  min-width: 0;
   overflow: hidden;
+  color: #10213b;
+  font-size: 16px;
+  font-weight: 900;
   text-overflow: ellipsis;
-}
-
-.chip-sep {
-  width: 1px;
-  height: 20px;
-  background: #e5edf5;
-  flex-shrink: 0;
-  margin: 0 2px;
-}
-
-/* ── 路线模式标签 ── */
-.route-chip {
-  flex-shrink: 0;
-  margin: 0 8px 0 4px;
-  padding: 5px 14px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #eff6ff, #ecfdf5);
-  color: #0d9488;
-  font-size: 12px;
-  font-weight: 700;
   white-space: nowrap;
-  border: 1px solid rgba(13, 148, 136, 0.12);
 }
 
-/* ── 右侧按钮区 ── */
 .summary-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 140px 190px;
+  gap: 14px;
+}
+
+.summary-actions button {
+  height: 50px;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-left: auto;
-  flex-shrink: 0;
-  padding-left: 16px;
-  border-left: 1px solid #eef3f8;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 900;
 }
 
 .action-edit {
-  color: #64748b !important;
-  font-weight: 600 !important;
-  font-size: 13px !important;
-  padding: 6px 12px !important;
-  border-radius: 8px !important;
-  transition: all 0.15s ease !important;
-}
-
-.action-edit:hover {
-  color: #2563eb !important;
-  background: #f1f5f9 !important;
+  border: 1px solid #d5e0ee;
+  background: #fff;
+  color: #596a82;
 }
 
 .action-primary {
-  height: 38px !important;
-  padding: 0 22px !important;
-  border-radius: 10px !important;
-  background: linear-gradient(135deg, #0d9488, #0891b2) !important;
-  border: none !important;
-  font-weight: 700 !important;
-  font-size: 14px !important;
-  letter-spacing: 0.3px !important;
-  transition: all 0.2s ease !important;
-  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.25) !important;
+  border: 0;
+  background: linear-gradient(135deg, #2f75ff, #176dff);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(47, 117, 255, .22);
 }
 
-.action-primary:hover {
-  transform: translateY(-1px) !important;
-  box-shadow: 0 8px 24px rgba(13, 148, 136, 0.32) !important;
-  filter: brightness(1.06) !important;
-}
-
-.action-primary:active {
-  transform: translateY(0) !important;
-}
-
-/* ── 响应式 ── */
-@media (max-width: 1100px) {
-  .summary-bar {
-    flex-wrap: wrap;
-    min-height: auto;
-    padding: 12px 16px;
-    gap: 10px;
+@media (max-width: 1180px) {
+  .summary-bar,
+  .summary-body,
+  .summary-actions {
+    grid-template-columns: 1fr;
   }
 
-  .summary-state {
-    padding-right: 12px;
-  }
-
-  .summary-body {
-    flex: 1 1 auto;
-    order: 2;
-    width: 100%;
-    padding: 0;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-
-  .chip-sep {
-    display: none;
-  }
-
-  .info-chip {
-    padding: 4px 8px;
-    background: #f8fafc;
-    border-radius: 6px;
-  }
-
-  .route-chip {
-    order: 3;
-    margin: 0;
+  .summary-body article {
+    padding: 12px 0;
+    border-right: 0;
+    border-bottom: 1px solid #e2eaf5;
   }
 
   .summary-actions {
-    order: 4;
-    width: 100%;
-    justify-content: flex-end;
-    border-left: none;
-    padding-left: 0;
-    padding-top: 6px;
-    border-top: 1px solid #eef3f8;
-  }
-
-  .action-primary {
-    height: 36px !important;
-    padding: 0 18px !important;
-    font-size: 13px !important;
-  }
-}
-
-@media (max-width: 480px) {
-  .summary-bar {
-    padding: 10px 12px;
-    gap: 8px;
-    border-radius: 12px;
-  }
-
-  .summary-state {
-    font-size: 13px;
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-  }
-
-  .info-chip span {
-    font-size: 12px;
-  }
-
-  .info-chip.wide span {
-    max-width: 120px;
+    grid-template-columns: 1fr 1fr;
+    padding-bottom: 16px;
   }
 }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ArrowRight, Calendar, Check, Clock, EditPen, Headset, Location, Money, Search, StarFilled, Suitcase, Switch, User, Van } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowRight, Calendar, Check, Clock, EditPen, Filter, Headset, Location, Money, Search, StarFilled, Suitcase, Switch, User, Van } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { rentalApi } from '../../api'
@@ -39,6 +39,7 @@ type RentalQuoteView = {
   isOneWay: boolean
   priceTemplateId: number
   featureTags?: string
+  travelTags?: string
   availableCount?: number
   dailyMileageLimitKm?: number
   extraMileageFeeCent?: number
@@ -166,9 +167,17 @@ const seedCars: RentalCarView[] = [
   { name: '皓影 1.5T CVT舒适版', image: rentalCardImages[2], label: 'SUV', labelClass: 'purple', desc: '空间宽敞，舒适安心全家出行', score: '4.8', reviews: 182, model: { brand: '本田', series: '皓影', seriesFullName: '皓影 1.5T CVT舒适版', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' }, quote: makeQuote('Q-3-3', 3, 'SUV', 'SUV', '皓影 1.5T CVT舒适版', 'SUV', '汽油', 147, { vehiclePrepareFeeCent: 0 }) },
   { name: '凯美瑞 2.0E 精英版', image: rentalCardImages[3], label: '舒适型', labelClass: 'green', desc: '稳定可靠，商务家用皆宜', score: '4.9', reviews: 97, selected: true, model: { brand: '丰田', series: '凯美瑞', seriesFullName: '凯美瑞 2.0E 精英版', transmission: '自动挡', seats: 5, luggage: 2, energyType: '汽油' }, quote: makeQuote('Q-4-4', 4, 'COMFORT_SEDAN_PLUS', '舒适型轿车', '凯美瑞 2.0E 精英版', '舒适型', '汽油', 108, { baseServiceFeeCent: 0, vehiclePrepareFeeCent: 0 }) },
 ]
-const cars = ref<RentalCarView[]>(seedCars)
+const cars = ref<RentalCarView[]>([])
 const activeCategory = ref('全部')
 const sortMode = ref<'recommend' | 'priceAsc' | 'priceDesc' | 'scoreDesc'>('recommend')
+const categoryOptions = ['全部', '经济型', '舒适型', 'SUV', '新能源', '商务型']
+const sortOptions = [
+  { value: 'recommend', label: '推荐排序' },
+  { value: 'priceAsc', label: '价格从低到高' },
+  { value: 'priceDesc', label: '价格从高到低' },
+  { value: 'scoreDesc', label: '评分最高' },
+] as const
+const moreFilterOptions = ['可免押', '免费取消', '含基础保险', '24h 救援']
 const searchForm = ref({
   pickupCity: '',
   returnCity: '',
@@ -182,7 +191,14 @@ const searchForm = ref({
   vehiclePreference: '不限车型',
   isOneWay: true,
 })
-const vehicleOptions = ['不限车型', '经济型', '舒适型', 'SUV', '新能源', '商务型']
+const vehicleOptionMeta: Record<string, string> = {
+  '不限车型': '全部可租车型',
+  '经济型': '省油代步',
+  '舒适型': '家庭/商务',
+  'SUV': '大空间出行',
+  '新能源': '低碳用车',
+  '商务型': '多人同行',
+}
 const cityOptions = ref<CityOption[]>([])
 const provinceCityOptions = ref<ProvinceCityOption[]>([])
 const pickupCityPath = ref<string[]>([])
@@ -374,8 +390,9 @@ const searchCities = async (keyword: string) => {
     cityLoading.value = false
   }
 }
-const locateCurrentCity = async (target: 'pickup' | 'return' = 'pickup') => {
+const locateCurrentCity = async (target: 'pickup' | 'return' = 'pickup', silent = false) => {
   locatingCity.value = true
+  let locatedCity = ''
   try {
     const AMap = await getAMap()
     const located = await new Promise<{ city: string; point?: { lng: number; lat: number } }>((resolve, reject) => {
@@ -398,6 +415,7 @@ const locateCurrentCity = async (target: 'pickup' | 'return' = 'pickup') => {
         })
       })
     })
+    locatedCity = located.city
     currentGeoPoint.value = located.point || currentGeoPoint.value
     if (target === 'return') {
       searchForm.value.returnCity = located.city
@@ -412,12 +430,13 @@ const locateCurrentCity = async (target: 'pickup' | 'return' = 'pickup') => {
         returnCityPath.value = []
       }
     }
-    ElMessage.success(`已定位到 ${located.city}`)
+    if (!silent) ElMessage.success(`已定位到 ${located.city}`)
   } catch (error: any) {
-    ElMessage.warning(error?.message || '定位失败，请手动选择城市')
+    if (!silent) ElMessage.warning(error?.message || '定位失败，请手动选择城市')
   } finally {
     locatingCity.value = false
   }
+  return locatedCity
 }
 const searchStores = async (kind: 'pickup' | 'return', keyword = '') => {
   const city = normalizeCityName(kind === 'pickup' ? searchForm.value.pickupCity : searchForm.value.returnCity || searchForm.value.pickupCity)
@@ -455,10 +474,10 @@ const searchStores = async (kind: 'pickup' | 'return', keyword = '') => {
     loading.value = false
   }
 }
-const searchNearbyStores = async (kind: 'pickup' | 'return') => {
+const searchNearbyStores = async (kind: 'pickup' | 'return', silent = false) => {
   const city = normalizeCityName(kind === 'pickup' ? searchForm.value.pickupCity : searchForm.value.returnCity)
   if (!city) {
-    ElMessage.warning(kind === 'pickup' ? '请先选择取车城市' : '请先选择还车城市')
+    if (!silent) ElMessage.warning(kind === 'pickup' ? '请先选择取车城市' : '请先选择还车城市')
     return
   }
   const loading = kind === 'pickup' ? pickupStoreLoading : returnStoreLoading
@@ -466,7 +485,7 @@ const searchNearbyStores = async (kind: 'pickup' | 'return') => {
   try {
     const AMap = await getAMap()
     if (!currentGeoPoint.value) {
-      await locateCurrentCity(kind)
+      await locateCurrentCity(kind, silent)
     }
     const point = currentGeoPoint.value
     if (!point) throw new Error('定位失败，请输入关键词查询门店')
@@ -489,10 +508,11 @@ const searchNearbyStores = async (kind: 'pickup' | 'return') => {
     })
     if (kind === 'pickup') pickupLocationOptions.value = stores
     else returnLocationOptions.value = stores
-    if (stores.length) ElMessage.success(`已找到 ${stores.length} 个附近租车点`)
-    else ElMessage.warning(`${city} 附近暂未查到租车门店`)
+    if (stores.length) {
+      if (!silent) ElMessage.success(`已找到 ${stores.length} 个附近租车点`)
+    } else if (!silent) ElMessage.warning(`${city} 附近暂未查到租车门店`)
   } catch (error: any) {
-    ElMessage.warning(error?.message || '附近门店查询失败')
+    if (!silent) ElMessage.warning(error?.message || '附近门店查询失败')
   } finally {
     loading.value = false
   }
@@ -528,38 +548,46 @@ const quoteToCar = (quote: any, index: number): RentalCarView => {
   const fallback = seedCars[index % seedCars.length]
   const profile = rentalCardProfiles[index % rentalCardProfiles.length]
   const fee = quote.feeBreakdown || fallback.quote.feeBreakdown
-  const modelName = profile.name
+  const modelName = quote.displayName || quote.vehicleName || quote.groupName || profile.name
   const featureTags = String(quote.featureTags || quote.travelTags || '')
     .split(/[,，]/)
     .map(item => item.trim())
     .filter(Boolean)
   return {
     name: modelName,
-    image: rentalCardImages[index % rentalCardImages.length] || quote.imageUrl || fallback.image,
+    image: quote.imageUrl || quote.coverImage || rentalCardImages[index % rentalCardImages.length] || fallback.image,
     label: quote.vehicleClass || quote.groupName || fallback.label,
     labelClass: quote.groupCode?.includes('SUV') ? 'purple' : 'green',
-    desc: profile.desc,
-    score: fallback.score,
-    reviews: fallback.reviews,
+    desc: featureTags.slice(0, 2).join('，') || quote.groupName || profile.desc,
+    score: quote.rating == null ? '' : String(quote.rating),
+    reviews: Number(quote.reviewCount || quote.reviews || 0),
     selected: index === 0,
     model: {
-      brand: profile.brand,
-      series: profile.series,
+      brand: quote.brand || profile.brand,
+      series: quote.series || quote.groupName || profile.series,
       seriesFullName: modelName,
-      transmission: profile.transmission,
-      seats: profile.seats,
-      luggage: profile.luggage,
-      energyType: profile.energyType,
+      transmission: quote.transmission || profile.transmission,
+      seats: quote.seatsMax || quote.seatsMin || profile.seats,
+      luggage: quote.luggage || profile.luggage,
+      energyType: energyText(quote.energyType) || profile.energyType,
     },
     quote: {
       ...fallback.quote,
       ...quote,
       feeBreakdown: fee,
-      featureTags: featureTags.join(',') || quote.featureTags || fallback.quote.featureTags,
+      featureTags: featureTags.join(',') || quote.featureTags || '',
       priceSnapshot: quote.priceSnapshot || fallback.quote.priceSnapshot,
     },
   }
 }
+const splitTags = (value?: string) => String(value || '')
+  .split(/[,，]/)
+  .map(item => item.trim())
+  .filter(Boolean)
+const carMediaBadges = (car: RentalCarView) => splitTags(car.quote.featureTags || car.quote.travelTags)
+  .filter(tag => !['自动挡', '手动挡', '汽油', '柴油', '纯电', '混动'].includes(tag))
+  .slice(0, 2)
+const carServiceTags = (car: RentalCarView) => splitTags(car.quote.includedServices).slice(0, 3)
 const selectedCar = computed(() => cars.value.find(item => item.selected) || cars.value[0])
 const selectedQuote = computed(() => selectedCar.value.quote)
 const selectedFee = computed(() => selectedQuote.value.feeBreakdown)
@@ -577,6 +605,15 @@ const displayedCars = computed(() => {
   if (sortMode.value === 'scoreDesc') list.sort((a, b) => Number(b.score) - Number(a.score))
   return list
 })
+const vehicleOptions = computed(() => categoryOptions.map(item => {
+  const value = item === '全部' ? '不限车型' : item
+  return {
+    value,
+    label: value,
+    count: item === '全部' ? cars.value.length : cars.value.filter(car => matchCategory(car, item)).length,
+    desc: vehicleOptionMeta[value] || '可租车型',
+  }
+}))
 const expandedQuoteId = ref<string | null>(null)
 const togglePriceDetail = (quoteId: string) => {
   expandedQuoteId.value = expandedQuoteId.value === quoteId ? null : quoteId
@@ -591,12 +628,12 @@ const orderPreview = computed(() => ({
   pickupTime: dateLabel(searchForm.value.pickupDate, searchForm.value.pickupTime),
   returnTime: dateLabel(searchForm.value.returnDate, searchForm.value.returnTime),
   pickupSnapshot: {
-    poiName: selectedQuote.value.pickupPoiName,
+    poiName: searchForm.value.pickupLocation || selectedQuote.value.pickupPoiName,
     address: selectedQuote.value.pickupAddress,
     mode: selectedQuote.value.pickupMode,
   },
   returnSnapshot: {
-    poiName: selectedQuote.value.returnPoiName,
+    poiName: searchForm.value.returnLocation || selectedQuote.value.returnPoiName,
     address: selectedQuote.value.returnAddress,
     mode: selectedQuote.value.returnMode,
   },
@@ -606,12 +643,6 @@ const benefits = [
   { icon: Check, title: '灵活取消', text: '免费取消，行程更灵活' },
   { icon: Location, title: '多网点取还', text: '全国覆盖，随心取还' },
   { icon: Headset, title: '24h 专属服务', text: '全天候在线支持' },
-]
-const whySteps = [
-  { icon: Location, title: '全国覆盖', text: '200+ 城市 · 2000+ 网点' },
-  { icon: Search, title: '易预订', text: '快速预订 · 即时确认' },
-  { icon: Van, title: '优质车源', text: '严选车辆 · 安全可靠' },
-  { icon: Check, title: '安心保障', text: '多重保障 · 行程无忧' },
 ]
 const quoteLoading = ref(false)
 const quoteRequirement = () => ({
@@ -652,7 +683,7 @@ const loadQuotes = async () => {
       sortMode.value = 'recommend'
     }
   } catch {
-    cars.value = seedCars
+    cars.value = []
   } finally {
     quoteLoading.value = false
   }
@@ -664,28 +695,47 @@ const loadLatestOrderedQuotes = async () => {
       cars.value = data.map(quoteToCar)
     }
   } catch {
-    cars.value = seedCars
+    cars.value = []
   }
 }
+const categoryFromVehicle = (value: string) => value && value !== '不限车型' ? value : '全部'
+const applyVehicleFilter = () => {
+  activeCategory.value = categoryFromVehicle(searchForm.value.vehiclePreference)
+  sortMode.value = 'recommend'
+}
+const hasCompleteSearchLocation = () => Boolean(
+  searchForm.value.pickupCity &&
+  searchForm.value.pickupLocation &&
+  (!searchForm.value.isOneWay || searchForm.value.returnLocation),
+)
 const switchMode = (next: Mode) => {
   mode.value = next
   requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
 }
 const goResults = async () => {
-  if (!searchForm.value.pickupCity) {
-    ElMessage.warning('请先选择取车城市')
+  if (hasCompleteSearchLocation()) await loadQuotes()
+  else await loadLatestOrderedQuotes()
+  if (!cars.value.length) {
+    ElMessage.warning('暂未获取到可用车型，请稍后重试或调整取还车信息')
     return
   }
-  if (!searchForm.value.pickupLocation) {
-    ElMessage.warning('请先选择取车地点')
-    return
-  }
-  if (searchForm.value.isOneWay && !searchForm.value.returnLocation) {
-    ElMessage.warning('请先选择还车地点')
-    return
-  }
-  await loadQuotes()
+  applyVehicleFilter()
   switchMode('results')
+}
+const viewAllCars = async () => {
+  searchForm.value.vehiclePreference = '不限车型'
+  cars.value = []
+  await loadLatestOrderedQuotes()
+  if (!cars.value.length) {
+    ElMessage.warning('暂未获取到可用车型，请稍后重试')
+    return
+  }
+  activeCategory.value = '全部'
+  sortMode.value = 'recommend'
+  switchMode('results')
+}
+const applyMoreFilter = (label: string) => {
+  ElMessage.info(`已选择：${label}`)
 }
 const goDetail = (car?: RentalCarView) => {
   detailBackMode.value = mode.value === 'results' ? 'results' : 'home'
@@ -781,8 +831,23 @@ onMounted(async () => {
   ensureCityOption(searchForm.value.pickupCity)
   ensureCityOption(searchForm.value.returnCity)
   loadChinaCities()
-  searchStores('pickup')
-  searchStores('return')
+  const city = await locateCurrentCity('pickup', true)
+  if (city) {
+    await searchNearbyStores('pickup', true)
+    if (!pickupLocationOptions.value.length) await searchStores('pickup')
+    const firstPickup = pickupLocationOptions.value[0]
+    if (firstPickup) searchForm.value.pickupLocation = firstPickup.name
+    if (!searchForm.value.returnCity) {
+      searchForm.value.returnCity = searchForm.value.pickupCity
+      syncReturnCityPath()
+    }
+    await searchStores('return')
+    const firstReturn = returnLocationOptions.value[0]
+    if (firstReturn) searchForm.value.returnLocation = firstReturn.name
+  } else {
+    searchStores('pickup')
+    searchStores('return')
+  }
   await loadLatestOrderedQuotes()
 })
 </script>
@@ -922,13 +987,18 @@ onMounted(async () => {
               </el-select>
             </el-form-item>
             <el-form-item class="vehicle-field" label="车型类型">
-              <el-select v-model="searchForm.vehiclePreference" :prefix-icon="Van">
-                <el-option v-for="item in vehicleOptions" :key="item" :label="item" :value="item" />
+              <el-select v-model="searchForm.vehiclePreference" :prefix-icon="Van" popper-class="vehicle-select-popper">
+                <el-option v-for="item in vehicleOptions" :key="item.value" :label="`${item.label} · ${item.count}款`" :value="item.value">
+                  <div class="vehicle-option">
+                    <b>{{ item.label }}</b>
+                    <span>{{ item.count }}款 · {{ item.desc }}</span>
+                  </div>
+                </el-option>
               </el-select>
             </el-form-item>
-            <el-button class="search-btn" type="primary" native-type="button" :loading="quoteLoading" @click="goResults">
-              <el-icon><Search /></el-icon>搜索车辆
-            </el-button>
+            <button class="search-btn" type="button" :disabled="quoteLoading" @click="goResults">
+              <el-icon><Search /></el-icon>{{ quoteLoading ? '搜索中' : '搜索车辆' }}
+            </button>
           </el-form>
         </section>
 
@@ -942,7 +1012,7 @@ onMounted(async () => {
               <h2>热门车型推荐</h2>
               <span>精选热门车型，满足您的出行体验</span>
             </div>
-            <button type="button">查看全部车型 <el-icon><ArrowRight /></el-icon></button>
+            <button type="button" @click="viewAllCars">查看全部车型 <el-icon><ArrowRight /></el-icon></button>
           </div>
           <div class="car-grid">
             <article v-for="car in cars" :key="car.name" class="home-car" role="button" tabindex="0" @click="goDetail(car)" @keydown.enter.prevent="goDetail(car)">
@@ -961,22 +1031,14 @@ onMounted(async () => {
           </div>
         </section>
 
-        <section class="why-section">
-          <h2>为什么选择 PlanGo</h2>
-          <div class="why-flow">
-            <template v-for="(item,index) in whySteps" :key="item.title">
-              <article><i><el-icon><component :is="item.icon" /></el-icon></i><b>{{ item.title }}</b><span>{{ item.text }}</span></article><em v-if="index < whySteps.length - 1"></em>
-            </template>
-          </div>
-        </section>
       </main>
     </template>
 
     <template v-else-if="mode === 'results'">
       <main class="results-main">
         <section class="summary-bar">
-          <article><span>取车地点</span><b><el-icon><Location /></el-icon>{{ searchForm.pickupLocation }}</b></article>
-          <article><span>还车地点</span><b><el-icon><Location /></el-icon>{{ searchForm.returnLocation }}</b></article>
+          <article><span>取车地点</span><b><el-icon><Location /></el-icon>{{ orderPreview.pickupSnapshot.poiName }}</b></article>
+          <article><span>还车地点</span><b><el-icon><Location /></el-icon>{{ orderPreview.returnSnapshot.poiName }}</b></article>
           <article><span>取车时间</span><b><el-icon><Calendar /></el-icon>{{ orderPreview.pickupTime }}</b></article>
           <article><span>还车时间</span><b><el-icon><Calendar /></el-icon>{{ orderPreview.returnTime }}</b></article>
           <article><span>行程时长</span><b><el-icon><Clock /></el-icon>{{ orderPreview.tripDays }} 天</b></article>
@@ -987,34 +1049,47 @@ onMounted(async () => {
         <section class="results-layout">
           <div class="results-left">
             <div class="category-tabs">
-              <button v-for="item in ['全部','经济型','舒适型','SUV','新能源','商务型']" :key="item" :class="{ active: activeCategory === item }" @click="activeCategory = item">{{ item }}</button>
+              <button v-for="item in categoryOptions" :key="item" :class="{ active: activeCategory === item }" @click="activeCategory = item">{{ item }}</button>
             </div>
             <div class="sort-row">
-              <button :class="{ active: sortMode === 'recommend' }" @click="sortMode = 'recommend'">☆ 推荐排序</button><button :class="{ active: sortMode === 'priceAsc' }" @click="sortMode = 'priceAsc'">价格从低到高</button><button :class="{ active: sortMode === 'priceDesc' }" @click="sortMode = 'priceDesc'">价格从高到低</button><button :class="{ active: sortMode === 'scoreDesc' }" @click="sortMode = 'scoreDesc'">评分最高</button><button>☷ 更多筛选⌄</button>
+              <button v-for="item in sortOptions" :key="item.value" :class="{ active: sortMode === item.value }" @click="sortMode = item.value">
+                <el-icon v-if="item.value === 'recommend'"><StarFilled /></el-icon>{{ item.label }}
+              </button>
+              <el-dropdown trigger="click" @command="applyMoreFilter">
+                <button class="more-filter" type="button"><el-icon><Filter /></el-icon>更多筛选<el-icon><ArrowDown /></el-icon></button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-for="item in moreFilterOptions" :key="item" :command="item">{{ item }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <span>共 {{ displayedCars.length }} 款车型</span>
             </div>
             <div class="result-list">
               <article v-for="car in displayedCars" :key="car.quote.quoteId" class="result-card" :class="{ selected: car.selected }">
-                <div class="choose-dot" v-if="car.selected"><el-icon><Check /></el-icon></div>
-                <span class="car-label" :class="car.labelClass">{{ car.label }}</span>
-                <span class="recommend" v-if="car.selected">推荐优选</span>
-                <img :src="car.image" :alt="car.name">
+                <div class="result-car-media">
+                  <div v-if="carMediaBadges(car).length" class="media-badges">
+                    <span v-for="(tag, tagIndex) in carMediaBadges(car)" :key="tag" :class="tagIndex === 0 ? 'hot-badge' : 'comfort-badge'">
+                      <el-icon><StarFilled v-if="tagIndex === 0" /><Check v-else /></el-icon>{{ tag }}
+                    </span>
+                  </div>
+                  <img :src="car.image" :alt="car.name">
+                </div>
                 <div class="car-info">
-                  <h2>{{ car.name }}</h2>
+                  <h2>{{ car.label }} {{ car.model.transmission }} {{ car.model.seats }}座</h2>
                   <div class="specs">
                     <span><el-icon><User /></el-icon>{{ car.model.seats }} 座</span>
                     <span><el-icon><Suitcase /></el-icon>{{ car.model.luggage }} 行李箱</span>
                     <span><el-icon><Switch /></el-icon>{{ car.model.transmission }}</span>
                     <span><el-icon><Van /></el-icon>{{ car.model.energyType }}</span>
                   </div>
-                  <p><el-icon><StarFilled /></el-icon><b>{{ car.score }}分</b><em>{{ car.reviews }} 条评价</em></p>
-                  <div class="service-tags"><span v-for="service in (car.quote.includedServices || '免费取消,基础保险,24h 道路救援').split(/[,，]/).filter(Boolean).slice(0,3)" :key="service">{{ service }}</span></div>
+                  <p v-if="car.score || car.reviews"><el-icon><StarFilled /></el-icon><b v-if="car.score">{{ car.score }}分</b><em v-if="car.reviews">{{ car.reviews }} 条评价</em></p>
+                  <div v-if="carServiceTags(car).length" class="service-tags"><span v-for="service in carServiceTags(car)" :key="service">{{ service }}</span></div>
                 </div>
                 <div class="price-box">
-                  <small>{{ car.selected ? '套餐价' : '单价低至' }}</small>
                   <strong>¥{{ car.selected ? yuan(car.quote.feeBreakdown.totalPriceCent) : dailyPrice(car) }}</strong><span>/{{ car.selected ? `${car.quote.rentalDays}天起` : '天起' }}</span>
                   <button type="button" @click="goDetail(car)">查看详情</button>
-                  <a role="button" @click.stop="togglePriceDetail(car.quote.quoteId)">价格明细{{ expandedQuoteId === car.quote.quoteId ? '⌃' : '⌄' }}</a>
+                  <a role="button" @click.stop="togglePriceDetail(car.quote.quoteId)">价格明细<el-icon><ArrowDown /></el-icon></a>
                 </div>
                 <div v-if="expandedQuoteId === car.quote.quoteId" class="inline-fee-detail">
                   <p><span>车辆租金（{{ car.quote.rentalDays }}天）</span><b>¥{{ yuan(car.quote.feeBreakdown.rentalFeeCent) }}</b></p>
@@ -1035,9 +1110,14 @@ onMounted(async () => {
           <aside class="results-side">
             <div class="map-card">
               <div class="route-map">
-                <b class="start">{{ orderPreview.pickupSnapshot.poiName }}</b>
-                <b class="end">{{ orderPreview.returnSnapshot.poiName }}</b>
-                <i></i>
+                <div class="map-grid"></div>
+                <div class="route-line"><span></span></div>
+                <b class="start"><i></i>{{ orderPreview.pickupSnapshot.poiName }}</b>
+                <b class="end"><i></i>{{ orderPreview.returnSnapshot.poiName }}</b>
+                <div class="map-meta">
+                  <strong>{{ orderPreview.tripDays }} 天</strong>
+                  <span>{{ orderPreview.mileageText }}</span>
+                </div>
               </div>
             </div>
             <div class="side-card overview">
@@ -1356,6 +1436,35 @@ onMounted(async () => {
   text-align: center;
 }
 
+.vehicle-option {
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  line-height: 1.2;
+}
+
+.vehicle-option b {
+  color: #10213b;
+  font-size: 14px;
+}
+
+.vehicle-option span {
+  color: #7b8798;
+  font-size: 12px;
+}
+
+:global(.vehicle-select-popper .el-select-dropdown__item) {
+  height: 58px;
+  padding: 4px 18px;
+  line-height: 1.2;
+}
+
+:global(.vehicle-select-popper .el-select-dropdown__item.is-hovering) {
+  background: #f5f8fc;
+}
+
 .locate-city:disabled {
   cursor: wait;
   opacity: .7;
@@ -1386,7 +1495,7 @@ onMounted(async () => {
 
 .rental-page .cars-section {
   margin-top: 24px;
-  margin-bottom: 34px;
+  margin-bottom: 0;
 }
 
 .rental-page .car-grid {
@@ -1700,7 +1809,7 @@ onMounted(async () => {
 
 .rental-page .home-main {
   width: min(1540px, calc(100vw - 160px));
-  margin-top: -72px;
+  margin-top: -136px;
 }
 
 .rental-page .search-card {
@@ -1761,10 +1870,10 @@ onMounted(async () => {
 }
 
 .rental-page .modern-search-form {
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(24, minmax(0, 1fr));
   grid-template-areas:
-    "city city city returncity returncity returncity pickup pickup pickup return return return"
-    "pdate pdate ptime ptime rdate rdate rtime rtime people vehicle button button";
+    "city city city city city city returncity returncity returncity returncity returncity returncity pickup pickup pickup pickup pickup pickup return return return return return return"
+    "pdate pdate pdate pdate ptime ptime ptime rdate rdate rdate rdate rtime rtime rtime people people vehicle vehicle vehicle vehicle button button button button";
   gap: 18px 20px;
 }
 
@@ -1795,10 +1904,30 @@ onMounted(async () => {
 
 .rental-page .search-btn {
   height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
   border-radius: 7px;
   background: linear-gradient(135deg, #176dff, #0b73ff);
+  color: #fff;
   box-shadow: 0 16px 28px rgba(23, 109, 255, .25);
+  cursor: pointer;
   font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.rental-page .search-btn .el-icon,
+.rental-page .search-btn svg {
+  transform: none !important;
+  animation: none !important;
+}
+
+.rental-page .search-btn:disabled {
+  cursor: wait;
+  opacity: .78;
 }
 
 .rental-page .benefit-row {
@@ -2027,6 +2156,399 @@ onMounted(async () => {
 
 .rental-page .why-section::before {
   content: none;
+}
+
+.rental-page .results-main {
+  width: min(1800px, calc(100vw - 104px));
+  padding: 30px 0 42px;
+}
+
+.rental-page .summary-bar {
+  min-height: 90px;
+  border-color: #dce8f8;
+  border-radius: 14px;
+  box-shadow: 0 14px 38px rgba(23, 68, 126, .08);
+}
+
+.rental-page .summary-bar span {
+  color: #71829b;
+  font-size: 13px;
+}
+
+.rental-page .summary-bar b {
+  max-height: 40px;
+  align-items: center;
+  color: #162946;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.rental-page .summary-bar article:first-child b,
+.rental-page .summary-bar article:nth-child(2) b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.rental-page .summary-bar button {
+  border-radius: 10px;
+  background: #fff;
+  transition: background .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.rental-page .summary-bar button:hover {
+  background: #f4f8ff;
+  box-shadow: 0 10px 24px rgba(31, 111, 255, .12);
+  transform: translateY(-1px);
+}
+
+.rental-page .category-tabs {
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px;
+  margin-bottom: 14px;
+  border: 1px solid #dce7f5;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .82);
+  box-shadow: 0 10px 28px rgba(31, 76, 130, .06);
+}
+
+.rental-page .category-tabs button {
+  width: auto;
+  min-width: 92px;
+  height: 42px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #42536e;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.rental-page .category-tabs button:hover {
+  background: #eef5ff;
+  color: #176dff;
+}
+
+.rental-page .category-tabs .active {
+  background: linear-gradient(135deg, #176dff, #0d78ff);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(23, 109, 255, .22);
+}
+
+.rental-page .sort-row {
+  min-height: 44px;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.rental-page .sort-row button,
+.rental-page .more-filter {
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 18px;
+  border: 1px solid #d8e4f3;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .9);
+  color: #243955;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(31, 76, 130, .04);
+  transition: background .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+.rental-page .sort-row button:hover,
+.rental-page .more-filter:hover {
+  border-color: #a8c8ff;
+  color: #176dff;
+  background: #f6f9ff;
+}
+
+.rental-page .sort-row .active {
+  border-color: #7fb0ff;
+  background: #edf5ff;
+  color: #176dff;
+  box-shadow: 0 10px 22px rgba(23, 109, 255, .1);
+}
+
+.rental-page .sort-row .el-icon {
+  font-size: 15px;
+}
+
+.rental-page .sort-row > span {
+  align-self: center;
+  color: #5f708a;
+  font-size: 14px;
+}
+
+.rental-page .result-list {
+  gap: 10px;
+}
+
+.rental-page .result-card {
+  min-height: 214px;
+  border-color: #dfe8f5;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(29, 70, 122, .05);
+}
+
+.rental-page .result-card.selected {
+  border-color: #2d74ff;
+  box-shadow: 0 14px 34px rgba(31, 111, 255, .12);
+}
+
+.rental-page .choose-dot {
+  display: none;
+}
+
+.rental-page .result-car-media {
+  position: relative;
+  width: 286px;
+  height: 158px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: linear-gradient(145deg, #dcecff 0%, #f7fbff 52%, #e8f1fb 100%);
+}
+
+.rental-page .result-car-media img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 6px;
+  mix-blend-mode: normal;
+}
+
+.rental-page .media-badges {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  z-index: 2;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.rental-page .media-badges span {
+  height: 27px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow: 0 8px 16px rgba(27, 85, 150, .14);
+  backdrop-filter: blur(8px);
+}
+
+.rental-page .media-badges .el-icon {
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .18);
+  font-size: 9px;
+}
+
+.rental-page .hot-badge {
+  background: linear-gradient(135deg, #1977ff 0%, #1168f4 100%);
+}
+
+.rental-page .comfort-badge {
+  color: #fff;
+  background: linear-gradient(135deg, #22bd76 0%, #12a567 100%);
+  box-shadow: 0 8px 16px rgba(18, 165, 103, .16);
+}
+
+.rental-page .comfort-badge .el-icon {
+  color: #fff;
+  background: rgba(255, 255, 255, .18);
+}
+
+.rental-page .car-info h2 {
+  color: #10213b;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 14px;
+}
+
+.rental-page .specs {
+  gap: 18px;
+  color: #334761;
+  font-size: 13px;
+}
+
+.rental-page .car-info p {
+  font-size: 14px;
+}
+
+.rental-page .service-tags span {
+  color: #60738e;
+  font-size: 13px;
+}
+
+.rental-page .price-box small {
+  color: #7b8aa3;
+  font-size: 13px;
+}
+
+.rental-page .price-box strong {
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.rental-page .price-box button {
+  width: 154px;
+  height: 44px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.rental-page .price-box a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.rental-page .price-box a .el-icon {
+  font-size: 12px;
+}
+
+.rental-page .results-side {
+  gap: 0;
+}
+
+.rental-page .map-card {
+  height: 280px;
+  border: 1px solid #dce6f2;
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: #eaf5ff;
+  box-shadow: 0 14px 34px rgba(25, 68, 128, .08);
+}
+
+.rental-page .route-map {
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 76% 28%, rgba(93, 158, 255, .18), transparent 26%),
+    radial-gradient(circle at 32% 74%, rgba(0, 184, 148, .15), transparent 24%),
+    linear-gradient(180deg, #edf7ff, #dff0ff);
+}
+
+.rental-page .route-map .map-grid {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(47, 128, 237, .08) 1px, transparent 1px),
+    linear-gradient(rgba(47, 128, 237, .08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.rental-page .route-map .route-line {
+  position: absolute;
+  left: 92px;
+  right: 78px;
+  top: 104px;
+  height: 104px;
+  border: 0;
+  border-bottom: 5px dotted #2f75ff;
+  border-right: 5px dotted #2f75ff;
+  border-radius: 0 0 62px 0;
+  transform: rotate(7deg);
+}
+
+.rental-page .route-map .route-line span {
+  position: absolute;
+  left: -8px;
+  bottom: -9px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #2f75ff;
+  box-shadow: 0 0 0 6px rgba(47, 117, 255, .16);
+}
+
+.rental-page .route-map b {
+  max-width: 214px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(214, 228, 246, .9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .92);
+  color: #10213b;
+  padding: 0 15px;
+  font-size: 13px;
+  box-shadow: 0 12px 28px rgba(24, 64, 113, .14);
+}
+
+.rental-page .route-map b i {
+  position: static;
+  margin: 0;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: #2f75ff;
+  border: 0;
+  transform: none;
+  box-shadow: none;
+}
+
+.rental-page .route-map .start {
+  left: 74px;
+  top: 36px;
+}
+
+.rental-page .route-map .end {
+  right: 38px;
+  bottom: 42px;
+}
+
+.rental-page .map-meta {
+  position: absolute;
+  left: 22px;
+  bottom: 20px;
+  display: grid;
+  gap: 2px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .82);
+  color: #64748b;
+  box-shadow: 0 10px 24px rgba(24, 64, 113, .1);
+}
+
+.rental-page .map-meta strong {
+  color: #0c213e;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.rental-page .map-meta span {
+  font-size: 12px;
+}
+
+.rental-page .map-card + .side-card {
+  margin-top: 0;
+  border-radius: 0 0 16px 16px;
 }
 
 @media (max-width: 1180px) {

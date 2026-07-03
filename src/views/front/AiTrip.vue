@@ -191,6 +191,7 @@ const hasRental=computed(()=>{
 })
 const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')?'出行方式：落地租车':'路线模式：租车自驾'):'城市轻松游')
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
+const isQuoteSelectStep=computed(()=>step.value==='QUOTE_SELECT')
 const currentDay=computed(()=>days.value[currentDayIndex.value])
 const dayOverlayVisible=computed(()=>currentDay.value?.status==='generating')
 const pendingDayNo=ref<number|null>(null)
@@ -1404,7 +1405,14 @@ function timeForIndex(index:number){
       </section>
     </section>
 
-    <div class="container builder-container">
+    <div class="container builder-container" :class="{ 'quote-select-container': isQuoteSelectStep }">
+      <section v-if="isQuoteSelectStep" class="quote-select-hero">
+        <div>
+          <h1>为你的{{ activeRequirement.destination || '目的地' }}之旅推荐租车方案</h1>
+          <p>根据你的行程与偏好，AI 为你精心筛选出最合适的车辆方案，出行更自由，旅途更舒心。</p>
+        </div>
+      </section>
+
       <RequirementSummaryBar
         v-if="ready&&(step==='ANALYZED'||step==='QUOTE_SELECT'||step==='RENTAL_DETAILS'||(step==='DAY_BUILDING'&&generating))"
         :requirement="activeRequirement"
@@ -1823,6 +1831,77 @@ function timeForIndex(index:number){
 
 .planning-landing .builder-container {
   margin-top: -58px;
+}
+
+.builder-container.quote-select-container {
+  width: min(1760px, calc(100vw - 128px));
+  gap: 18px;
+  padding-top: 34px;
+}
+
+.builder-container.quote-select-container::before {
+  content: "";
+  position: fixed;
+  inset: 72px 0 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(238, 247, 255, .98) 0, rgba(247, 251, 255, .98) 310px, #f7fbff 100%);
+}
+
+.quote-select-hero {
+  position: relative;
+  min-height: 122px;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+}
+
+.quote-select-hero::before {
+  content: "";
+  position: absolute;
+  right: -42px;
+  top: -18px;
+  width: 760px;
+  height: 142px;
+  opacity: .92;
+  background:
+    radial-gradient(circle at 73% 68%, #6f85a7 0 3px, transparent 4px),
+    radial-gradient(circle at 76% 70%, #6f85a7 0 3px, transparent 4px),
+    linear-gradient(180deg, transparent 0 40%, rgba(118, 168, 229, .18) 41% 100%);
+  clip-path: polygon(0 80%, 12% 62%, 23% 45%, 37% 40%, 50% 58%, 61% 30%, 72% 18%, 86% 8%, 100% 17%, 100% 100%, 0 100%);
+}
+
+.quote-select-hero::after {
+  content: "";
+  position: absolute;
+  right: 46px;
+  bottom: 0;
+  width: 470px;
+  height: 92px;
+  opacity: .62;
+  background:
+    linear-gradient(90deg, transparent 0 6%, #9fc2ef 7% 10%, transparent 11% 19%, #7eaee7 20% 25%, transparent 26% 36%, #91bdf0 37% 43%, transparent 44% 55%, #72a5df 56% 61%, transparent 62%),
+    linear-gradient(180deg, transparent 0 62%, rgba(130, 174, 226, .32) 63% 100%);
+}
+
+.quote-select-hero h1 {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 14px;
+  color: #10213b;
+  font-size: 34px;
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.quote-select-hero p {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: #30435f;
+  font-size: 16px;
+  line-height: 1.7;
 }
 
 .builder-card {

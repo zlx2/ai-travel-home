@@ -173,7 +173,7 @@ function normalizeGenerateResult(data: any): GenerateResult {
   }
 }
 
-function normalizeTripPlan(plan: any): TripPlan {
+export function normalizeTripPlan(plan: any): TripPlan {
   const dailyPlans = plan.dailyPlans || plan.daysPlan || plan.itineraryDays || plan.dayPlans || []
   return {
     title: plan.title,
@@ -195,7 +195,7 @@ function normalizeTripPlan(plan: any): TripPlan {
 }
 
 function normalizeTripDay(day: any, index: number) {
-  const activities = day.activities || day.items || day.spots || day.places || day.scenicSpots || []
+  const rawItems = day.activities || day.items || day.spots || day.places || day.scenicSpots || day.timeline || []
   const timeline = Array.isArray(day.timeline) ? day.timeline.map((item: any, itemIndex: number) => normalizeTimelineNode(item, itemIndex)) : []
   const routeLegs = day.routeLegs || []
   const estimated = day.estimatedCost || {}
@@ -204,14 +204,14 @@ function normalizeTripDay(day: any, index: number) {
     day: day.day || day.dayNo || index + 1,
     title: day.title || day.theme || day.dailyTheme || `Day ${index + 1}`,
     city: day.city,
-    activities: activities.map((item: any, itemIndex: number) => {
+    activities: rawItems.map((item: any, itemIndex: number) => {
       const routeLeg = routeLegs.find((leg: any) => Number(leg.fromOrder) === Number(item.order || itemIndex + 1))
       return {
         time: item.time || item.startTime || item.arrivalTime || '',
         title: item.title || item.place || item.name || item.spotName || item.poiName || '',
         description: item.description || item.activity || item.summary || item.reason || item.recommendReason || '',
         tags: item.tags || [item.type, item.transport].filter(Boolean),
-        cost: Number(item.cost ?? item.ticketCost ?? item.ticketPrice ?? item.estimatedCost ?? 0),
+        cost: Number(item.cost ?? item.ticketCost ?? item.ticketPrice ?? (typeof item.estimatedCost === 'object' ? item.estimatedCost?.total : item.estimatedCost) ?? 0),
         costText: item.costText || item.ticketCostText,
         suggestedDuration: item.suggestedDuration || item.suggestedDurationText || item.stayDuration || item.duration || item.recommendedStayTime || (item.suggestedDurationMinutes ? `${item.suggestedDurationMinutes} 分钟` : undefined),
         suggestedDurationSource: item.suggestedDurationSource,
@@ -234,7 +234,7 @@ function normalizeTripDay(day: any, index: number) {
     timeline,
     startAnchor: normalizeAnchor(day.startAnchor),
     endAnchor: normalizeAnchor(day.endAnchor),
-    food: day.food || day.foodSuggestions || day.diningSuggestions || day.restaurantSuggestions || [],
+    food: (day.food || []).length ? day.food : (day.foodSuggestions || day.diningSuggestions || day.restaurantSuggestions || []).map((f:any)=>f?.name||f||'').filter(Boolean),
     budget: Number(day.budget || estimated.total || 0),
     estimatedCost: {
       tickets: Number(estimated.tickets || 0),

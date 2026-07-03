@@ -406,6 +406,7 @@ const confirmChangeEmail=async()=>{const re=/^\S+@\S+\.\S+$/;if(!emailForm.newEm
   background: #2f80ed;
   border-color: #2f80ed;
 }
+.form-actions .el-button :deep(.el-icon) { animation: none !important; }
 
 .profile-aside {
   display: grid;

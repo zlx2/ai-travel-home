@@ -4,6 +4,7 @@ import type { Requirement } from '../../types'
 
 defineProps<{ requirement: Requirement; routeMode: string; hasRental: boolean }>()
 const emit = defineEmits<{ edit: []; continue: [] }>()
+const budgetText = (budget?: number | string) => budget ? `¥${budget} 内` : '待确认'
 </script>
 
 <template>
@@ -32,7 +33,7 @@ const emit = defineEmits<{ edit: []; continue: [] }>()
       <article>
         <el-icon><Money /></el-icon>
         <span>预算范围</span>
-        <b>¥{{ requirement.budget }} 内</b>
+        <b>{{ budgetText(requirement.budget) }}</b>
       </article>
     </div>
 
@@ -64,7 +65,7 @@ const emit = defineEmits<{ edit: []; continue: [] }>()
 .summary-body {
   min-width: 0;
   display: grid;
-  grid-template-columns: 140px 140px 140px minmax(260px, 1fr) 150px;
+  grid-template-columns: 140px 140px 140px minmax(260px, 1fr) 176px;
   align-items: center;
 }
 
@@ -112,6 +113,11 @@ const emit = defineEmits<{ edit: []; continue: [] }>()
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.summary-body article:last-child b {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .summary-actions {

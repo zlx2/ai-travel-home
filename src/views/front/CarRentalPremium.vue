@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Calendar, Check, Clock, EditPen, Headset, Location, Money, Search, StarFilled, Suitcase, Switch, User, Van } from '@element-plus/icons-vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { ArrowRight, Calendar, Check, Clock, EditPen, Headset, Location, Money, Search, StarFilled, Suitcase, Switch, User, Van } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { rentalApi } from '../../api'
+import { loadAMap } from '../../utils/amapLoader'
 
 type Mode = 'home' | 'results' | 'detail' | 'order'
 type FeeBreakdown = {
@@ -64,9 +66,48 @@ type RentalCarView = {
   }
   quote: RentalQuoteView
 }
+type CityOption = {
+  name: string
+  adcode?: string
+  citycode?: string
+  level?: string
+}
+type ProvinceCityOption = {
+  label: string
+  value: string
+  adcode?: string
+  citycode?: string
+  children?: ProvinceCityOption[]
+}
+type StoreOption = {
+  id: string
+  name: string
+  address: string
+  city: string
+  type?: string
+  distance?: string
+  location?: {
+    lng: number
+    lat: number
+  }
+}
 
 const mode = ref<Mode>('home')
-const heroCar = '/assets/cars/hero-suv.jpg'
+const elementLocale = zhCn
+const rentalCardAssetBase = 'https://ai-education-1428653062.cos.ap-shanghai.myqcloud.com/car_rental/index'
+const heroCar = `${rentalCardAssetBase}/rental-hero-road-wide.png`
+const rentalCardImages = [
+  `${rentalCardAssetBase}/rental-card-burgundy-sedan.webp`,
+  `${rentalCardAssetBase}/rental-card-red-sedan.webp`,
+  `${rentalCardAssetBase}/rental-card-silver-suv.webp`,
+  `${rentalCardAssetBase}/rental-card-white-sedan.webp`,
+]
+const rentalCardProfiles = [
+  { name: '轩逸 1.6L CVT悦享版', desc: '经济省油，舒适大空间出行', brand: '日产', series: '轩逸', transmission: '自动挡', seats: 5, luggage: 2, energyType: '汽油' },
+  { name: '速腾 1.5T DSG超越版', desc: '动力充沛，操控出色更从容', brand: '大众', series: '速腾', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' },
+  { name: '皓影 1.5T CVT舒适版', desc: '空间宽敞，舒适安心全家出行', brand: '本田', series: '皓影', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' },
+  { name: '凯美瑞 2.0E 精英版', desc: '稳定可靠，商务家用皆宜', brand: '丰田', series: '凯美瑞', transmission: '自动挡', seats: 5, luggage: 2, energyType: '汽油' },
+]
 const yuan = (cent: number | undefined) => Math.round((cent || 0) / 100)
 const energyText = (value?: string) => {
   const text = String(value || '').toUpperCase()
@@ -120,19 +161,19 @@ const makeQuote = (id: string, groupId: number, groupCode: string, groupName: st
   }
 }
 const seedCars: RentalCarView[] = [
-  { name: '大众 朗逸', image: '/assets/cars/lavida.jpg', label: '经济型', labelClass: 'green', desc: '经济省油｜适合城市出行', score: '4.8', reviews: 126, model: { brand: '大众', series: '朗逸', seriesFullName: '大众 朗逸', transmission: '自动挡', seats: 5, luggage: 2, energyType: '汽油' }, quote: makeQuote('Q-1-1', 1, 'ECONOMY_SEDAN', '经济型轿车', '大众朗逸或同级', '经济型', '汽油', 168, { vehiclePrepareFeeCent: 0 }) },
-  { name: '丰田 凯美瑞', image: '/assets/cars/camry.jpg', label: '舒适型', labelClass: 'green', desc: '舒适稳重｜商务出行优选', score: '4.9', reviews: 215, model: { brand: '丰田', series: '凯美瑞', seriesFullName: '丰田 凯美瑞', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' }, quote: makeQuote('Q-2-2', 2, 'COMFORT_SEDAN', '舒适型轿车', '丰田凯美瑞或同级', '舒适型', '汽油', 268, { vehiclePrepareFeeCent: 0 }) },
-  { name: '本田 CR-V', image: '/assets/cars/crv.jpg', label: 'SUV', labelClass: 'purple', desc: '空间宽敞｜家庭出行优选', score: '4.8', reviews: 182, model: { brand: '本田', series: 'CR-V', seriesFullName: '本田 CR-V', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' }, quote: makeQuote('Q-3-3', 3, 'SUV', 'SUV', '本田 CR-V 或同级', 'SUV', '汽油', 358, { vehiclePrepareFeeCent: 0 }) },
-  { name: '特斯拉 Model 3', image: '/assets/cars/camry.jpg', label: '新能源', labelClass: 'green', desc: '智能电动｜城市高速都从容', score: '4.9', reviews: 97, selected: true, model: { brand: '特斯拉', series: 'Model 3', seriesFullName: '特斯拉 Model 3', transmission: '自动挡', seats: 5, luggage: 2, energyType: '纯电' }, quote: makeQuote('Q-4-4', 4, 'EV_SEDAN', '新能源轿车', '特斯拉 Model 3 或同级', '新能源', '纯电', 358, { baseServiceFeeCent: 0, vehiclePrepareFeeCent: 3000, oneWayFeeCent: 12000, totalPriceCent: 86600 }) },
+  { name: '轩逸 1.6L CVT悦享版', image: rentalCardImages[0], label: '经济型', labelClass: 'green', desc: '经济省油，舒适大空间出行', score: '4.8', reviews: 126, model: { brand: '日产', series: '轩逸', seriesFullName: '轩逸 1.6L CVT悦享版', transmission: '自动挡', seats: 5, luggage: 2, energyType: '汽油' }, quote: makeQuote('Q-1-1', 1, 'ECONOMY_SEDAN', '经济型轿车', '轩逸 1.6L CVT悦享版', '经济型', '汽油', 57, { vehiclePrepareFeeCent: 0 }) },
+  { name: '速腾 1.5T DSG超越版', image: rentalCardImages[1], label: '舒适型', labelClass: 'green', desc: '动力充沛，操控出色更从容', score: '4.9', reviews: 215, model: { brand: '大众', series: '速腾', seriesFullName: '速腾 1.5T DSG超越版', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' }, quote: makeQuote('Q-2-2', 2, 'COMFORT_SEDAN', '舒适型轿车', '速腾 1.5T DSG超越版', '舒适型', '汽油', 105, { vehiclePrepareFeeCent: 0 }) },
+  { name: '皓影 1.5T CVT舒适版', image: rentalCardImages[2], label: 'SUV', labelClass: 'purple', desc: '空间宽敞，舒适安心全家出行', score: '4.8', reviews: 182, model: { brand: '本田', series: '皓影', seriesFullName: '皓影 1.5T CVT舒适版', transmission: '自动挡', seats: 5, luggage: 3, energyType: '汽油' }, quote: makeQuote('Q-3-3', 3, 'SUV', 'SUV', '皓影 1.5T CVT舒适版', 'SUV', '汽油', 147, { vehiclePrepareFeeCent: 0 }) },
+  { name: '凯美瑞 2.0E 精英版', image: rentalCardImages[3], label: '舒适型', labelClass: 'green', desc: '稳定可靠，商务家用皆宜', score: '4.9', reviews: 97, selected: true, model: { brand: '丰田', series: '凯美瑞', seriesFullName: '凯美瑞 2.0E 精英版', transmission: '自动挡', seats: 5, luggage: 2, energyType: '汽油' }, quote: makeQuote('Q-4-4', 4, 'COMFORT_SEDAN_PLUS', '舒适型轿车', '凯美瑞 2.0E 精英版', '舒适型', '汽油', 108, { baseServiceFeeCent: 0, vehiclePrepareFeeCent: 0 }) },
 ]
 const cars = ref<RentalCarView[]>(seedCars)
 const activeCategory = ref('全部')
 const sortMode = ref<'recommend' | 'priceAsc' | 'priceDesc' | 'scoreDesc'>('recommend')
 const searchForm = ref({
-  pickupCity: '上海',
-  returnCity: '杭州',
-  pickupLocation: '上海虹桥机场 T2 航站楼',
-  returnLocation: '杭州萧山国际机场',
+  pickupCity: '',
+  returnCity: '',
+  pickupLocation: '',
+  returnLocation: '',
   pickupDate: '2025-06-01',
   pickupTime: '10:00',
   returnDate: '2025-06-03',
@@ -141,21 +182,323 @@ const searchForm = ref({
   vehiclePreference: '不限车型',
   isOneWay: true,
 })
-const rentalType = ref('国内租车')
 const vehicleOptions = ['不限车型', '经济型', '舒适型', 'SUV', '新能源', '商务型']
-const cityOptions = ['上海', '成都', '杭州', '北京', '广州', '深圳', '重庆', '西安', '南京', '厦门']
-const pickupLocationOptions = [
-  { name: '上海虹桥机场 T2 航站楼', address: '闵行区申达一路，近到达层 6 号门' },
-  { name: '上海浦东国际机场 T2 航站楼', address: '浦东新区迎宾大道，航站楼停车区' },
-  { name: '上海站北广场门店', address: '静安区秣陵路 303 号' },
-  { name: '上海市中心送车点', address: '黄浦区人民广场商圈，上门取还' },
-]
-const returnLocationOptions = [
-  { name: '杭州萧山国际机场', address: '萧山区空港大道，P2 停车场取还' },
-  { name: '杭州东站门店', address: '上城区天城路 1 号东广场' },
-  { name: '西湖湖滨商圈门店', address: '上城区延安路，近龙翔桥地铁站' },
-  { name: '杭州市中心还车点', address: '拱墅区武林商圈，上门取还' },
-]
+const cityOptions = ref<CityOption[]>([])
+const provinceCityOptions = ref<ProvinceCityOption[]>([])
+const pickupCityPath = ref<string[]>([])
+const returnCityPath = ref<string[]>([])
+const pickupLocationOptions = ref<StoreOption[]>([])
+const returnLocationOptions = ref<StoreOption[]>([])
+const cityLoading = ref(false)
+const pickupStoreLoading = ref(false)
+const returnStoreLoading = ref(false)
+const locatingCity = ref(false)
+const cityListLoaded = ref(false)
+const currentGeoPoint = ref<{ lng: number; lat: number } | null>(null)
+let AMapRef: any = null
+const normalizeCityName = (value?: string) => String(value || '').replace(/市$/, '').trim()
+const ensureCityOption = (city: string, extra: Partial<CityOption> = {}) => {
+  const name = normalizeCityName(city)
+  if (!name) return
+  if (!cityOptions.value.some(item => item.name === name)) cityOptions.value.unshift({ name, ...extra })
+}
+const mergeCityOptions = (items: CityOption[]) => {
+  const map = new Map(cityOptions.value.map(item => [item.name, item]))
+  items.forEach(item => {
+    const name = normalizeCityName(item.name)
+    if (name) map.set(name, { ...map.get(name), ...item, name })
+  })
+  cityOptions.value = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+}
+const mergeProvinceCityOptions = (items: ProvinceCityOption[]) => {
+  const map = new Map(provinceCityOptions.value.map(item => [item.value, item]))
+  items.forEach(item => map.set(item.value, item))
+  provinceCityOptions.value = [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'))
+}
+const districtToCityOptions = (districts: any[]): CityOption[] => {
+  const cities: CityOption[] = []
+  const walk = (items: any[]) => {
+    items.forEach(item => {
+      if (item.level === 'city' || item.level === 'province') {
+        cities.push({
+          name: normalizeCityName(item.name),
+          adcode: item.adcode,
+          citycode: item.citycode,
+          level: item.level,
+        })
+      }
+      if (Array.isArray(item.districtList)) walk(item.districtList)
+      if (Array.isArray(item.districts)) walk(item.districts)
+    })
+  }
+  walk(districts)
+  return cities.filter(item => item.name)
+}
+const districtToProvinceCityOptions = (districts: any[]): ProvinceCityOption[] => {
+  const normalizeChildren = (item: any) => {
+    const children = item.districtList || item.districts || []
+    return children
+      .filter((child: any) => child.level === 'city' || child.level === 'province')
+      .map((child: any) => ({
+        label: normalizeCityName(child.name),
+        value: normalizeCityName(child.name),
+        adcode: child.adcode,
+        citycode: child.citycode,
+      }))
+      .filter((child: ProvinceCityOption) => child.label)
+  }
+  const root = districts[0]?.districtList || districts[0]?.districts || districts
+  return root
+    .filter((item: any) => item.level === 'province' || item.level === 'city')
+    .map((item: any) => {
+      const provinceName = normalizeCityName(item.name)
+      const children = normalizeChildren(item)
+      return {
+        label: provinceName,
+        value: provinceName,
+        adcode: item.adcode,
+        citycode: item.citycode,
+        children: children.length ? children : [{ label: provinceName, value: provinceName, adcode: item.adcode, citycode: item.citycode }],
+      }
+    })
+    .filter((item: ProvinceCityOption) => item.label)
+}
+const normalizeStore = (poi: any, city: string): StoreOption => {
+  const location = poi.location
+  return {
+    id: String(poi.id || `${poi.name}-${poi.address || ''}`),
+    name: String(poi.name || '未命名门店'),
+    address: Array.isArray(poi.address) ? poi.address.join('') : String(poi.address || poi.pname || city),
+    city,
+    type: poi.type,
+    distance: poi.distance ? `${poi.distance}m` : '',
+    location: location ? { lng: Number(location.lng), lat: Number(location.lat) } : undefined,
+  }
+}
+const getAMap = async () => {
+  if (!AMapRef) AMapRef = await loadAMap()
+  return AMapRef
+}
+const loadChinaCities = async () => {
+  if (cityListLoaded.value || cityLoading.value) return
+  cityLoading.value = true
+  try {
+    const AMap = await getAMap()
+    const result = await new Promise<{ cities: CityOption[]; provinceCities: ProvinceCityOption[] }>((resolve, reject) => {
+      const districtSearch = new AMap.DistrictSearch({
+        level: 'country',
+        subdistrict: 2,
+        extensions: 'base',
+      })
+      districtSearch.search('中国', (status: string, result: any) => {
+        if (status !== 'complete') {
+          reject(new Error('全国城市列表加载失败'))
+          return
+        }
+        const districts = result?.districtList || []
+        resolve({
+          cities: districtToCityOptions(districts),
+          provinceCities: districtToProvinceCityOptions(districts),
+        })
+      })
+    })
+    mergeCityOptions(result.cities)
+    mergeProvinceCityOptions(result.provinceCities)
+    cityListLoaded.value = true
+    syncPickupCityPath()
+    syncReturnCityPath()
+  } catch (error: any) {
+    ElMessage.warning(error?.message || '城市列表加载失败，请输入城市名搜索')
+  } finally {
+    ensureCityOption(searchForm.value.pickupCity)
+    ensureCityOption(searchForm.value.returnCity)
+    cityLoading.value = false
+  }
+}
+const handleCityDropdown = (visible: boolean) => {
+  if (visible) loadChinaCities()
+}
+const findProvinceCityPath = (city: string) => {
+  const name = normalizeCityName(city)
+  for (const province of provinceCityOptions.value) {
+    const matched = province.children?.find(child => child.value === name)
+    if (matched) return [province.value, matched.value]
+    if (province.value === name) return [province.value, province.children?.[0]?.value || province.value]
+  }
+  return [name, name]
+}
+const syncPickupCityPath = () => {
+  pickupCityPath.value = findProvinceCityPath(searchForm.value.pickupCity)
+}
+const syncReturnCityPath = () => {
+  returnCityPath.value = findProvinceCityPath(searchForm.value.returnCity)
+}
+const handlePickupCityPathChange = (value: string[]) => {
+  const city = normalizeCityName(value?.[1] || value?.[0])
+  searchForm.value.pickupCity = city
+}
+const handleReturnCityPathChange = (value: string[]) => {
+  const city = normalizeCityName(value?.[1] || value?.[0])
+  searchForm.value.returnCity = city
+}
+const searchCities = async (keyword: string) => {
+  const query = keyword.trim()
+  if (!query) {
+    loadChinaCities()
+    return
+  }
+  cityLoading.value = true
+  try {
+    const AMap = await getAMap()
+    await new Promise<void>((resolve, reject) => {
+      const districtSearch = new AMap.DistrictSearch({
+        level: 'city',
+        subdistrict: 0,
+        extensions: 'base',
+      })
+      districtSearch.search(query, (status: string, result: any) => {
+        if (status !== 'complete') {
+          reject(new Error('城市查询失败'))
+          return
+        }
+        const cities = districtToCityOptions(result?.districtList || [])
+        mergeCityOptions(cities)
+        ensureCityOption(searchForm.value.pickupCity)
+        ensureCityOption(searchForm.value.returnCity)
+        resolve()
+      })
+    })
+  } catch (error: any) {
+    ElMessage.warning(error?.message || '城市查询暂不可用，请稍后重试')
+  } finally {
+    cityLoading.value = false
+  }
+}
+const locateCurrentCity = async (target: 'pickup' | 'return' = 'pickup') => {
+  locatingCity.value = true
+  try {
+    const AMap = await getAMap()
+    const located = await new Promise<{ city: string; point?: { lng: number; lat: number } }>((resolve, reject) => {
+      const citySearch = new AMap.CitySearch()
+      citySearch.getLocalCity((status: string, result: any) => {
+        if (status === 'complete' && result?.city) {
+          resolve({ city: normalizeCityName(result.city) })
+          return
+        }
+        const geolocation = new AMap.Geolocation({ timeout: 8000, showButton: false })
+        geolocation.getCurrentPosition((geoStatus: string, geoResult: any) => {
+          const addressCity = geoResult?.addressComponent?.city || geoResult?.addressComponent?.province
+          const position = geoResult?.position
+          if (geoStatus === 'complete' && addressCity) {
+            resolve({
+              city: normalizeCityName(addressCity),
+              point: position ? { lng: Number(position.lng), lat: Number(position.lat) } : undefined,
+            })
+          } else reject(new Error('定位失败，请手动选择城市'))
+        })
+      })
+    })
+    currentGeoPoint.value = located.point || currentGeoPoint.value
+    if (target === 'return') {
+      searchForm.value.returnCity = located.city
+      ensureCityOption(located.city)
+      syncReturnCityPath()
+    } else {
+      searchForm.value.pickupCity = located.city
+      ensureCityOption(located.city)
+      syncPickupCityPath()
+      if (!searchForm.value.isOneWay) {
+        searchForm.value.returnCity = ''
+        returnCityPath.value = []
+      }
+    }
+    ElMessage.success(`已定位到 ${located.city}`)
+  } catch (error: any) {
+    ElMessage.warning(error?.message || '定位失败，请手动选择城市')
+  } finally {
+    locatingCity.value = false
+  }
+}
+const searchStores = async (kind: 'pickup' | 'return', keyword = '') => {
+  const city = normalizeCityName(kind === 'pickup' ? searchForm.value.pickupCity : searchForm.value.returnCity || searchForm.value.pickupCity)
+  if (!city) return
+  const loading = kind === 'pickup' ? pickupStoreLoading : returnStoreLoading
+  loading.value = true
+  try {
+    const AMap = await getAMap()
+    const query = [keyword.trim(), '租车', '机场', '高铁站'].filter(Boolean).join(' ')
+    const stores = await new Promise<StoreOption[]>((resolve, reject) => {
+      const placeSearch = new AMap.PlaceSearch({
+        city,
+        citylimit: true,
+        pageSize: 12,
+        pageIndex: 1,
+        extensions: 'all',
+        type: '汽车服务|汽车租赁|交通设施服务',
+      })
+      placeSearch.search(query || '租车', (status: string, result: any) => {
+        if (status !== 'complete') {
+          reject(new Error(`${city} 暂未查到可用取还车点`))
+          return
+        }
+        resolve((result?.poiList?.pois || []).map((poi: any) => normalizeStore(poi, city)))
+      })
+    })
+    if (kind === 'pickup') pickupLocationOptions.value = stores
+    else returnLocationOptions.value = stores
+    if (!stores.length) ElMessage.warning(`${city} 暂未查到可用取还车点，请换个关键词`)
+  } catch (error: any) {
+    if (kind === 'pickup') pickupLocationOptions.value = []
+    else returnLocationOptions.value = []
+    ElMessage.warning(error?.message || '门店查询暂不可用，请稍后重试')
+  } finally {
+    loading.value = false
+  }
+}
+const searchNearbyStores = async (kind: 'pickup' | 'return') => {
+  const city = normalizeCityName(kind === 'pickup' ? searchForm.value.pickupCity : searchForm.value.returnCity)
+  if (!city) {
+    ElMessage.warning(kind === 'pickup' ? '请先选择取车城市' : '请先选择还车城市')
+    return
+  }
+  const loading = kind === 'pickup' ? pickupStoreLoading : returnStoreLoading
+  loading.value = true
+  try {
+    const AMap = await getAMap()
+    if (!currentGeoPoint.value) {
+      await locateCurrentCity(kind)
+    }
+    const point = currentGeoPoint.value
+    if (!point) throw new Error('定位失败，请输入关键词查询门店')
+    const stores = await new Promise<StoreOption[]>((resolve, reject) => {
+      const placeSearch = new AMap.PlaceSearch({
+        city,
+        citylimit: true,
+        pageSize: 12,
+        pageIndex: 1,
+        extensions: 'all',
+        type: '汽车服务|汽车租赁|交通设施服务',
+      })
+      placeSearch.searchNearBy('租车', new AMap.LngLat(point.lng, point.lat), 8000, (status: string, result: any) => {
+        if (status !== 'complete') {
+          reject(new Error(`${city} 附近暂未查到租车门店`))
+          return
+        }
+        resolve((result?.poiList?.pois || []).map((poi: any) => normalizeStore(poi, city)))
+      })
+    })
+    if (kind === 'pickup') pickupLocationOptions.value = stores
+    else returnLocationOptions.value = stores
+    if (stores.length) ElMessage.success(`已找到 ${stores.length} 个附近租车点`)
+    else ElMessage.warning(`${city} 附近暂未查到租车门店`)
+  } catch (error: any) {
+    ElMessage.warning(error?.message || '附近门店查询失败')
+  } finally {
+    loading.value = false
+  }
+}
+const searchPickupStores = (keyword: string) => searchStores('pickup', keyword)
+const searchReturnStores = (keyword: string) => searchStores('return', keyword)
 const contactForm = ref({
   name: '',
   phone: '',
@@ -183,29 +526,30 @@ const daysBetween = () => {
 }
 const quoteToCar = (quote: any, index: number): RentalCarView => {
   const fallback = seedCars[index % seedCars.length]
+  const profile = rentalCardProfiles[index % rentalCardProfiles.length]
   const fee = quote.feeBreakdown || fallback.quote.feeBreakdown
-  const modelName = quote.seriesFullName || quote.displayName || quote.groupName || fallback.name
+  const modelName = profile.name
   const featureTags = String(quote.featureTags || quote.travelTags || '')
     .split(/[,，]/)
     .map(item => item.trim())
     .filter(Boolean)
   return {
     name: modelName,
-    image: quote.imageUrl || fallback.image,
+    image: rentalCardImages[index % rentalCardImages.length] || quote.imageUrl || fallback.image,
     label: quote.vehicleClass || quote.groupName || fallback.label,
     labelClass: quote.groupCode?.includes('SUV') ? 'purple' : 'green',
-    desc: quote.summary || quote.description || fallback.desc,
+    desc: profile.desc,
     score: fallback.score,
     reviews: fallback.reviews,
     selected: index === 0,
     model: {
-      brand: quote.brand || fallback.model.brand,
-      series: quote.series || modelName,
+      brand: profile.brand,
+      series: profile.series,
       seriesFullName: modelName,
-      transmission: quote.transmission || fallback.model.transmission,
-      seats: quote.seats || quote.seatsMax || fallback.model.seats,
-      luggage: Number(String(quote.recommendedLuggage || '').match(/\d+/)?.[0] || fallback.model.luggage),
-      energyType: energyText(quote.energyType || fallback.model.energyType),
+      transmission: profile.transmission,
+      seats: profile.seats,
+      luggage: profile.luggage,
+      energyType: profile.energyType,
     },
     quote: {
       ...fallback.quote,
@@ -286,6 +630,8 @@ const quoteRequirement = () => ({
     needRental: true,
     rentalStartCity: searchForm.value.pickupCity,
     rentalEndCity: searchForm.value.returnCity,
+    pickupLocation: searchForm.value.pickupLocation,
+    returnLocation: searchForm.value.returnLocation,
     pickupMode: 'AIRPORT',
     returnMode: 'AIRPORT',
     pickupCity: searchForm.value.pickupCity,
@@ -326,6 +672,18 @@ const switchMode = (next: Mode) => {
   requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
 }
 const goResults = async () => {
+  if (!searchForm.value.pickupCity) {
+    ElMessage.warning('请先选择取车城市')
+    return
+  }
+  if (!searchForm.value.pickupLocation) {
+    ElMessage.warning('请先选择取车地点')
+    return
+  }
+  if (searchForm.value.isOneWay && !searchForm.value.returnLocation) {
+    ElMessage.warning('请先选择还车地点')
+    return
+  }
   await loadQuotes()
   switchMode('results')
 }
@@ -372,10 +730,65 @@ const bookNow = async () => {
     bookingLoading.value = false
   }
 }
-onMounted(loadLatestOrderedQuotes)
+watch(() => searchForm.value.pickupCity, city => {
+  const name = normalizeCityName(city)
+  if (!name) {
+    searchForm.value.pickupLocation = ''
+    pickupLocationOptions.value = []
+    pickupCityPath.value = []
+    return
+  }
+  searchForm.value.pickupCity = name
+  searchForm.value.pickupLocation = ''
+  ensureCityOption(name)
+  syncPickupCityPath()
+  searchStores('pickup')
+  if (!searchForm.value.isOneWay) {
+    searchForm.value.returnCity = ''
+    searchForm.value.returnLocation = ''
+    returnCityPath.value = []
+    returnLocationOptions.value = []
+  }
+})
+watch(() => searchForm.value.returnCity, city => {
+  const name = normalizeCityName(city)
+  if (!name) {
+    searchForm.value.returnLocation = ''
+    returnLocationOptions.value = []
+    returnCityPath.value = []
+    return
+  }
+  searchForm.value.returnCity = name
+  searchForm.value.returnLocation = ''
+  ensureCityOption(name)
+  syncReturnCityPath()
+  searchStores('return')
+})
+watch(() => searchForm.value.isOneWay, value => {
+  if (!value) {
+    searchForm.value.returnCity = ''
+    searchForm.value.returnLocation = ''
+    returnCityPath.value = []
+    returnLocationOptions.value = []
+  } else {
+    if (searchForm.value.returnCity) searchStores('return')
+  }
+})
+watch(() => searchForm.value.pickupLocation, value => {
+  if (!searchForm.value.isOneWay) searchForm.value.returnLocation = ''
+})
+onMounted(async () => {
+  ensureCityOption(searchForm.value.pickupCity)
+  ensureCityOption(searchForm.value.returnCity)
+  loadChinaCities()
+  searchStores('pickup')
+  searchStores('return')
+  await loadLatestOrderedQuotes()
+})
 </script>
 
 <template>
+  <el-config-provider :locale="elementLocale">
   <div class="rental-page">
     <template v-if="mode === 'home'">
       <section class="home-hero">
@@ -393,6 +806,11 @@ onMounted(loadLatestOrderedQuotes)
             <span class="plane"></span>
             <div class="skyline"></div>
             <img :src="heroCar" alt="蓝色 SUV">
+            <aside class="hero-price-card">
+              <span>今日热门 SUV</span>
+              <b>低至</b>
+              <strong>¥57<em>/天起</em></strong>
+            </aside>
           </div>
         </div>
       </section>
@@ -400,51 +818,108 @@ onMounted(loadLatestOrderedQuotes)
       <main class="home-main">
         <section class="search-card">
           <div class="search-head">
-            <el-segmented v-model="rentalType" :options="['国内租车', '海外租车']" size="large" />
+            <div class="rental-tabs" role="tablist" aria-label="租车类型">
+              <button class="active" type="button" role="tab" aria-selected="true">国内租车</button>
+              <button class="disabled" type="button" role="tab" aria-disabled="true" disabled>海外租车</button>
+            </div>
           </div>
           <el-form class="modern-search-form" :model="searchForm" label-position="top" size="large">
-            <el-form-item class="city-field" label="取车城市">
-              <el-select v-model="searchForm.pickupCity" filterable allow-create default-first-option placeholder="输入城市名">
-                <el-option v-for="city in cityOptions" :key="city" :label="city" :value="city" />
+            <el-form-item class="city-field">
+              <template #label>
+                <span class="field-label-row">取车城市<button type="button" :disabled="locatingCity" @click.stop="locateCurrentCity('pickup')"><el-icon><Location /></el-icon>定位</button></span>
+              </template>
+              <el-cascader
+                v-model="pickupCityPath"
+                :options="provinceCityOptions"
+                filterable
+                clearable
+                :loading="cityLoading"
+                placeholder="选择省份 / 城市"
+                :props="{ expandTrigger: 'hover' }"
+                @visible-change="handleCityDropdown"
+                @change="handlePickupCityPathChange"
+              />
+            </el-form-item>
+            <el-form-item class="return-city-field">
+              <template #label>
+                <span class="field-label-row">还车城市<button type="button" :disabled="!searchForm.isOneWay || locatingCity" @click.stop="locateCurrentCity('return')"><el-icon><Location /></el-icon>定位</button></span>
+              </template>
+              <el-cascader
+                v-model="returnCityPath"
+                :options="provinceCityOptions"
+                filterable
+                clearable
+                :disabled="!searchForm.isOneWay"
+                :loading="cityLoading"
+                placeholder="选择省份 / 城市"
+                :props="{ expandTrigger: 'hover' }"
+                @visible-change="handleCityDropdown"
+                @change="handleReturnCityPathChange"
+              />
+            </el-form-item>
+            <el-form-item class="pickup-field" label="取车地点">
+              <el-select
+                v-model="searchForm.pickupLocation"
+                filterable
+                remote
+                reserve-keyword
+                :remote-method="searchPickupStores"
+                :loading="pickupStoreLoading"
+                :disabled="!searchForm.pickupCity"
+                placeholder="先选城市，再搜机场/车站/门店"
+                popper-class="store-select-popper"
+              >
+                <el-option v-for="item in pickupLocationOptions" :key="item.id" :label="item.name" :value="item.name">
+                  <div class="store-option"><b>{{ item.name }}</b><span>{{ item.address }}</span><em v-if="item.type">{{ item.type }}</em></div>
+                </el-option>
+                <template #empty><div class="store-empty">输入关键词查询可取车门店</div></template>
                 <template #footer>
-                  <button class="locate-city" type="button"><el-icon><Location /></el-icon>定位当前城市</button>
+                  <button class="select-footer-action" type="button" :disabled="!searchForm.pickupCity || pickupStoreLoading" @click="searchNearbyStores('pickup')">
+                    <el-icon><Location /></el-icon>定位附近取车点
+                  </button>
                 </template>
               </el-select>
             </el-form-item>
-            <el-form-item class="oneway-field" label="取还方式">
-              <el-checkbox v-model="searchForm.isOneWay">异地还车</el-checkbox>
-            </el-form-item>
-            <el-form-item class="pickup-field" label="取车地点">
-              <el-select v-model="searchForm.pickupLocation" filterable placeholder="输入机场/车站/门店" popper-class="store-select-popper">
-                <el-option v-for="item in pickupLocationOptions" :key="item.name" :label="item.name" :value="item.name">
-                  <div class="store-option"><b>{{ item.name }}</b><span>{{ item.address }}</span></div>
-                </el-option>
-              </el-select>
-            </el-form-item>
             <el-form-item class="return-field" label="还车地点">
-              <el-select v-model="searchForm.returnLocation" filterable placeholder="输入机场/车站/门店" popper-class="store-select-popper" :disabled="!searchForm.isOneWay">
-                <el-option v-for="item in returnLocationOptions" :key="item.name" :label="item.name" :value="item.name">
-                  <div class="store-option"><b>{{ item.name }}</b><span>{{ item.address }}</span></div>
+              <el-select
+                v-model="searchForm.returnLocation"
+                filterable
+                remote
+                reserve-keyword
+                :remote-method="searchReturnStores"
+                :loading="returnStoreLoading"
+                placeholder="先选城市，再搜机场/车站/门店"
+                popper-class="store-select-popper"
+                :disabled="!searchForm.isOneWay || !searchForm.returnCity"
+              >
+                <el-option v-for="item in returnLocationOptions" :key="item.id" :label="item.name" :value="item.name">
+                  <div class="store-option"><b>{{ item.name }}</b><span>{{ item.address }}</span><em v-if="item.type">{{ item.type }}</em></div>
                 </el-option>
+                <template #empty><div class="store-empty">输入关键词查询可还车门店</div></template>
+                <template #footer>
+                  <button class="select-footer-action" type="button" :disabled="!searchForm.isOneWay || !searchForm.returnCity || returnStoreLoading" @click="searchNearbyStores('return')">
+                    <el-icon><Location /></el-icon>定位附近还车点
+                  </button>
+                </template>
               </el-select>
             </el-form-item>
             <span class="form-row-break" aria-hidden="true"></span>
             <el-form-item class="pickup-date-field" label="取车日期">
-              <el-date-picker v-model="searchForm.pickupDate" type="date" value-format="YYYY-MM-DD" :prefix-icon="Calendar" />
+              <el-date-picker v-model="searchForm.pickupDate" type="date" format="YYYY年MM月DD日" value-format="YYYY-MM-DD" :prefix-icon="Calendar" />
             </el-form-item>
             <el-form-item class="pickup-time-field" label="取车时间">
               <el-time-select v-model="searchForm.pickupTime" start="00:00" step="00:30" end="23:30" :prefix-icon="Clock" />
             </el-form-item>
             <el-form-item class="return-date-field" label="还车日期">
-              <el-date-picker v-model="searchForm.returnDate" type="date" value-format="YYYY-MM-DD" :prefix-icon="Calendar" />
+              <el-date-picker v-model="searchForm.returnDate" type="date" format="YYYY年MM月DD日" value-format="YYYY-MM-DD" :prefix-icon="Calendar" />
             </el-form-item>
             <el-form-item class="return-time-field" label="还车时间">
               <el-time-select v-model="searchForm.returnTime" start="00:00" step="00:30" end="23:30" :prefix-icon="Clock" />
             </el-form-item>
             <el-form-item class="people-field" label="乘车人数">
-              <el-input v-model.number="searchForm.peopleCount" type="number" min="1" max="9">
-                <template #suffix>人</template>
-              </el-input>
+              <el-select v-model="searchForm.peopleCount" placeholder="选择人数">
+                <el-option v-for="count in 7" :key="count" :label="`${count} 人`" :value="count" />
+              </el-select>
             </el-form-item>
             <el-form-item class="vehicle-field" label="车型类型">
               <el-select v-model="searchForm.vehiclePreference" :prefix-icon="Van">
@@ -462,11 +937,26 @@ onMounted(loadLatestOrderedQuotes)
         </section>
 
         <section class="cars-section">
-          <h2>热门车型推荐</h2>
+          <div class="section-title-line">
+            <div>
+              <h2>热门车型推荐</h2>
+              <span>精选热门车型，满足您的出行体验</span>
+            </div>
+            <button type="button">查看全部车型 <el-icon><ArrowRight /></el-icon></button>
+          </div>
           <div class="car-grid">
             <article v-for="car in cars" :key="car.name" class="home-car" role="button" tabindex="0" @click="goDetail(car)" @keydown.enter.prevent="goDetail(car)">
-              <img :src="car.image" :alt="car.name">
-              <div><h3>{{ car.name }}</h3><p><span>{{ car.model.transmission }}</span><span>{{ car.model.seats }} 座</span><span>{{ car.model.energyType }}</span></p><small>{{ car.desc }}</small><strong>¥{{ dailyPrice(car) }} <em>/天起</em></strong></div>
+              <button class="favorite-lite" type="button" aria-label="收藏车型">♡</button>
+              <div class="car-cover"><img :src="car.image" :alt="car.name"></div>
+              <div class="home-car-body">
+                <h3>{{ car.name }}</h3>
+                <p><span>{{ car.model.transmission }}</span><span>{{ car.model.seats }} 座</span><span>{{ car.model.energyType }}</span></p>
+                <small>{{ car.desc }}</small>
+              </div>
+              <div class="home-car-footer">
+                <strong>¥{{ dailyPrice(car) }} <em>起/天</em></strong>
+                <button class="book-now" type="button" @click.stop="goDetail(car)">立即预订</button>
+              </div>
             </article>
           </div>
         </section>
@@ -680,6 +1170,7 @@ onMounted(loadLatestOrderedQuotes)
       </main>
     </template>
   </div>
+  </el-config-provider>
 </template>
 
 <style scoped>
@@ -704,8 +1195,11 @@ onMounted(loadLatestOrderedQuotes)
 
 .rental-page .modern-search-form {
   display: grid;
-  grid-template-columns: 160px 120px minmax(220px, 1fr) minmax(220px, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  grid-template-areas:
+    "city city city city city returncity returncity returncity returncity returncity oneway oneway oneway pickup pickup pickup pickup pickup return return return return return return"
+    "pdate pdate pdate pdate ptime ptime ptime rdate rdate rdate rdate rtime rtime rtime people people people vehicle vehicle vehicle button button button button";
+  gap: 18px 16px;
   align-items: start;
 }
 
@@ -718,6 +1212,7 @@ onMounted(loadLatestOrderedQuotes)
 
 .rental-page .modern-search-form :deep(.city-field),
 .rental-page .modern-search-form :deep(.oneway-field),
+.rental-page .modern-search-form :deep(.return-city-field),
 .rental-page .modern-search-form :deep(.pickup-field),
 .rental-page .modern-search-form :deep(.return-field),
 .rental-page .modern-search-form :deep(.pickup-date-field),
@@ -729,25 +1224,141 @@ onMounted(loadLatestOrderedQuotes)
   width: auto;
 }
 
+.rental-page .modern-search-form :deep(.city-field) {
+  grid-area: city;
+}
+
+.rental-page .modern-search-form :deep(.oneway-field) {
+  grid-area: oneway;
+}
+
+.rental-page .modern-search-form :deep(.pickup-field) {
+  grid-area: pickup;
+}
+
+.rental-page .modern-search-form :deep(.return-field) {
+  grid-area: return;
+}
+
+.rental-page .modern-search-form :deep(.return-city-field) {
+  grid-area: returncity;
+}
+
+.rental-page .modern-search-form :deep(.pickup-date-field) {
+  grid-area: pdate;
+}
+
+.rental-page .modern-search-form :deep(.pickup-time-field) {
+  grid-area: ptime;
+}
+
+.rental-page .modern-search-form :deep(.return-date-field) {
+  grid-area: rdate;
+}
+
+.rental-page .modern-search-form :deep(.return-time-field) {
+  grid-area: rtime;
+}
+
+.rental-page .modern-search-form :deep(.people-field) {
+  grid-area: people;
+}
+
+.rental-page .modern-search-form :deep(.vehicle-field) {
+  grid-area: vehicle;
+}
+
 .rental-page .form-row-break {
   display: none;
 }
 
-.rental-page .modern-search-form :deep(.pickup-date-field),
-.rental-page .modern-search-form :deep(.pickup-time-field),
-.rental-page .modern-search-form :deep(.return-date-field),
-.rental-page .modern-search-form :deep(.return-time-field),
-.rental-page .modern-search-form :deep(.people-field),
-.rental-page .modern-search-form :deep(.vehicle-field),
 .rental-page .modern-search-form > .search-btn {
-  grid-column: span 1;
-}
-
-.rental-page .modern-search-form > .search-btn {
+  grid-area: button;
   width: 100%;
   height: 52px;
   margin-top: 24px;
   align-self: start;
+}
+
+.rental-page .modern-search-form :deep(.el-input-number) {
+  width: 100%;
+  height: 52px;
+}
+
+.rental-page .modern-search-form :deep(.el-cascader) {
+  width: 100%;
+  height: 52px;
+}
+
+.rental-page .modern-search-form :deep(.el-cascader .el-input) {
+  height: 52px;
+}
+
+.rental-page .modern-search-form :deep(.el-input-number .el-input__wrapper) {
+  height: 52px;
+}
+
+.rental-page .modern-search-form :deep(.el-date-editor .el-input__inner) {
+  font-size: 13px;
+}
+
+.rental-page .modern-search-form :deep(.el-form-item__error) {
+  padding-top: 4px;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.field-label-row button,
+.select-footer-action {
+  border: 0;
+  background: transparent;
+  color: #1268f4;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0;
+}
+
+.field-label-row button:disabled,
+.select-footer-action:disabled {
+  color: #9aa8bb;
+  cursor: not-allowed;
+}
+
+.select-footer-action {
+  width: 100%;
+  height: 34px;
+  justify-content: center;
+  background: #f5f8fc;
+}
+
+.store-option em {
+  margin-top: 3px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.store-empty {
+  padding: 14px 16px;
+  color: #7b8798;
+  font-size: 13px;
+  text-align: center;
+}
+
+.locate-city:disabled {
+  cursor: wait;
+  opacity: .7;
 }
 
 .rental-page .summary-bar {
@@ -886,6 +1497,15 @@ onMounted(loadLatestOrderedQuotes)
 
   .rental-page .modern-search-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "city oneway"
+      "returncity returncity"
+      "pickup pickup"
+      "return return"
+      "pdate ptime"
+      "rdate rtime"
+      "people vehicle"
+      "button button";
   }
 
   .rental-page .results-layout,
@@ -918,6 +1538,22 @@ onMounted(loadLatestOrderedQuotes)
     grid-template-columns: 1fr;
   }
 
+  .rental-page .modern-search-form {
+    grid-template-areas:
+      "city"
+      "oneway"
+      "returncity"
+      "pickup"
+      "return"
+      "pdate"
+      "ptime"
+      "rdate"
+      "rtime"
+      "people"
+      "vehicle"
+      "button";
+  }
+
   .rental-page .summary-bar article {
     border-right: 0;
     padding-right: 0;
@@ -940,6 +1576,515 @@ onMounted(loadLatestOrderedQuotes)
     right: 16px;
     width: calc(100% - 32px);
     height: 170px;
+  }
+}
+
+/* Rental landing final visual pass: match the provided banner-led layout. */
+.rental-page {
+  background:
+    linear-gradient(180deg, #f4f9ff 0%, #f7fbff 46%, #ffffff 100%);
+}
+
+.rental-page .home-hero {
+  height: 376px;
+  overflow: visible;
+  background:
+    linear-gradient(90deg, rgba(244, 250, 255, .96) 0%, rgba(244, 250, 255, .88) 27%, rgba(244, 250, 255, .16) 48%, rgba(244, 250, 255, 0) 100%),
+    url('https://ai-education-1428653062.cos.ap-shanghai.myqcloud.com/car_rental/index/rental-hero-road-wide.png') center -116px / cover no-repeat;
+}
+
+.rental-page .home-hero::before,
+.rental-page .home-hero::after {
+  content: none;
+}
+
+.rental-page .home-hero-inner {
+  grid-template-columns: minmax(520px, 620px) minmax(0, 1fr);
+  width: min(1540px, calc(100vw - 160px));
+}
+
+.rental-page .hero-copy {
+  padding-top: 52px;
+}
+
+.rental-page .hero-copy h1 {
+  color: #0a2348;
+  font-size: 48px;
+  letter-spacing: 0;
+}
+
+.rental-page .hero-copy p {
+  margin-top: 10px;
+  margin-bottom: 28px;
+  color: #41526f;
+  font-size: 18px;
+}
+
+.rental-page .hero-promises {
+  width: 680px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 30px;
+}
+
+.rental-page .hero-promises article {
+  height: 58px;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 3px 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.rental-page .hero-promises .el-icon {
+  width: 38px;
+  height: 38px;
+  background: rgba(236, 246, 255, .95);
+  box-shadow: 0 10px 24px rgba(35, 111, 224, .12);
+}
+
+.rental-page .hero-promises b {
+  color: #12264a;
+  font-size: 15px;
+}
+
+.rental-page .hero-promises span {
+  color: #687890;
+  font-size: 12px;
+}
+
+.rental-page .hero-art {
+  position: relative;
+}
+
+.rental-page .hero-art > img,
+.rental-page .hero-art .plane,
+.rental-page .hero-art .skyline {
+  display: none;
+}
+
+.rental-page .hero-price-card {
+  position: absolute;
+  right: 22px;
+  top: 122px;
+  width: 132px;
+  height: 112px;
+  padding: 16px 18px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(16, 50, 86, .88), rgba(44, 92, 134, .72));
+  color: #fff;
+  box-shadow: 0 16px 36px rgba(15, 42, 76, .22);
+  backdrop-filter: blur(10px);
+}
+
+.rental-page .hero-price-card span,
+.rental-page .hero-price-card b {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rental-page .hero-price-card strong {
+  display: block;
+  margin-top: 2px;
+  color: #ff7a00;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.rental-page .hero-price-card em {
+  color: #fff;
+  font-size: 13px;
+  font-style: normal;
+}
+
+.rental-page .home-main {
+  width: min(1540px, calc(100vw - 160px));
+  margin-top: -72px;
+}
+
+.rental-page .search-card {
+  padding: 20px 44px 38px;
+  border: 1px solid rgba(221, 230, 242, .88);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 18px 50px rgba(30, 73, 126, .13);
+}
+
+.rental-page .search-head {
+  margin-bottom: 22px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.rental-page .rental-tabs {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 3px;
+  border: 1px solid #dbe7f6;
+  border-radius: 8px;
+  background: #f5f8fc;
+}
+
+.rental-page .rental-tabs button {
+  min-width: 104px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #42526d;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.rental-page .rental-tabs .active {
+  background: #fff;
+  color: #1167f2;
+  box-shadow: 0 4px 12px rgba(31, 111, 255, .13);
+}
+
+.rental-page .rental-tabs .disabled {
+  position: relative;
+  color: #9ca8ba;
+  cursor: not-allowed;
+  opacity: .72;
+}
+
+.rental-page .rental-tabs .disabled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: repeating-linear-gradient(-45deg, rgba(165, 176, 194, .16) 0 6px, rgba(165, 176, 194, .04) 6px 12px);
+}
+
+.rental-page .modern-search-form {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-areas:
+    "city city city returncity returncity returncity pickup pickup pickup return return return"
+    "pdate pdate ptime ptime rdate rdate rtime rtime people vehicle button button";
+  gap: 18px 20px;
+}
+
+.rental-page .modern-search-form :deep(.oneway-field) {
+  display: none;
+}
+
+.rental-page .modern-search-form :deep(.el-form-item__label) {
+  color: #243955;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.rental-page .modern-search-form :deep(.el-input__wrapper),
+.rental-page .modern-search-form :deep(.el-select__wrapper) {
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #d8e3f1 inset;
+}
+
+.rental-page .modern-search-form :deep(.el-cascader .el-input__wrapper) {
+  border-radius: 6px;
+}
+
+.rental-page .field-label-row button {
+  color: #287cff;
+}
+
+.rental-page .search-btn {
+  height: 52px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #176dff, #0b73ff);
+  box-shadow: 0 16px 28px rgba(23, 109, 255, .25);
+  font-size: 16px;
+}
+
+.rental-page .benefit-row {
+  height: 68px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 8px 0 24px;
+  overflow: hidden;
+  border: 1px solid rgba(226, 234, 245, .88);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .86);
+  box-shadow: 0 12px 36px rgba(30, 73, 126, .08);
+}
+
+.rental-page .benefit-row article {
+  height: 68px;
+  border: 0;
+  border-right: 1px solid #dbe5f1;
+  border-radius: 0;
+  background: transparent;
+  justify-content: center;
+}
+
+.rental-page .benefit-row article:last-child {
+  border-right: 0;
+}
+
+.rental-page .benefit-row .el-icon {
+  width: 38px;
+  height: 38px;
+  background: #eef6ff;
+  box-shadow: 0 9px 22px rgba(35, 111, 224, .1);
+}
+
+.rental-page .section-title-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 26px;
+}
+
+.rental-page .section-title-line > div {
+  display: flex;
+  align-items: baseline;
+  gap: 26px;
+}
+
+.rental-page .section-title-line h2 {
+  position: relative;
+  margin: 0;
+  color: #10213b;
+  font-size: 34px;
+  line-height: 1.1;
+}
+
+.rental-page .section-title-line span {
+  color: #71829b;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.rental-page .section-title-line h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -18px;
+  width: 58px;
+  height: 5px;
+  border-radius: 999px;
+  background: #1f72ff;
+}
+
+.rental-page .section-title-line button {
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 28px;
+  border: 1px solid #2f75ff;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  color: #2f75ff;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.rental-page .car-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.rental-page .home-car {
+  position: relative;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 14px 14px 0;
+  border: 1px solid #e2ebf7;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(32, 66, 111, .11);
+}
+
+.rental-page .favorite-lite {
+  position: absolute;
+  right: 20px;
+  top: 20px;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .9);
+  color: #71809a;
+  cursor: pointer;
+  font-size: 29px;
+  line-height: 1;
+  box-shadow: 0 8px 20px rgba(42, 72, 112, .1);
+}
+
+.rental-page .car-cover {
+  height: 210px;
+  overflow: hidden;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 95%, rgba(170, 190, 216, .28), transparent 36%),
+    linear-gradient(160deg, #edf5ff 0%, #f9fcff 48%, #e9f2fb 100%);
+}
+
+.rental-page .home-car img {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  object-fit: cover;
+  object-position: center;
+  background: transparent;
+}
+
+.rental-page .home-car-body {
+  padding: 18px 12px 16px;
+}
+
+.rental-page .home-car h3 {
+  color: #172b4d;
+  font-size: 24px;
+  line-height: 1.18;
+}
+
+.rental-page .home-car p {
+  display: flex;
+  gap: 12px;
+  margin: 14px 0 14px;
+}
+
+.rental-page .home-car p span {
+  min-width: 56px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  border-radius: 6px;
+  background: #eef3fa;
+  color: #4f7fc4;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.rental-page .home-car small {
+  display: block;
+  min-height: 26px;
+  color: #64748b;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.rental-page .home-car-footer {
+  height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: auto -14px 0;
+  padding: 0 28px;
+  border-top: 1px solid #edf2f8;
+  background: linear-gradient(180deg, #fff, #fbfdff);
+}
+
+.rental-page .home-car strong {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  color: #ff6b00;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.rental-page .home-car strong em {
+  color: #627089;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.rental-page .home-car .book-now {
+  width: 116px;
+  min-width: 116px;
+  flex: 0 0 116px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2878ff, #1168ef);
+  color: #fff;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 800;
+  box-shadow: 0 12px 24px rgba(32, 111, 255, .24);
+}
+
+.rental-page .why-section {
+  margin-top: 20px;
+  padding-bottom: 36px;
+}
+
+.rental-page .why-section::before {
+  content: none;
+}
+
+@media (max-width: 1180px) {
+  .rental-page .home-hero-inner,
+  .rental-page .home-main {
+    width: calc(100vw - 40px);
+  }
+
+  .rental-page .hero-promises {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .rental-page .modern-search-form {
+    grid-template-areas:
+      "city returncity"
+      "pickup pickup"
+      "return return"
+      "pdate ptime"
+      "rdate rtime"
+      "people vehicle"
+      "button button";
+  }
+}
+
+@media (max-width: 760px) {
+  .rental-page .home-hero {
+    height: auto;
+    min-height: 430px;
+    background-position: 62% top;
+  }
+
+  .rental-page .hero-copy h1 {
+    font-size: 36px;
+  }
+
+  .rental-page .hero-price-card {
+    display: none;
+  }
+
+  .rental-page .search-card {
+    padding: 16px;
+  }
+
+  .rental-page .modern-search-form {
+    grid-template-areas:
+      "city"
+      "returncity"
+      "pickup"
+      "return"
+      "pdate"
+      "ptime"
+      "rdate"
+      "rtime"
+      "people"
+      "vehicle"
+      "button";
   }
 }
 </style>

@@ -17,7 +17,15 @@ export const loadAMap = () => {
   amapPromise = AMapLoader.load({
     key,
     version: '2.0',
-    plugins: ['AMap.Scale', 'AMap.ToolBar', 'AMap.Driving', 'AMap.PlaceSearch'],
+    plugins: [
+      'AMap.Scale',
+      'AMap.ToolBar',
+      'AMap.Driving',
+      'AMap.PlaceSearch',
+      'AMap.CitySearch',
+      'AMap.DistrictSearch',
+      'AMap.Geolocation',
+    ],
   })
 
   return amapPromise

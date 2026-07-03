@@ -3359,7 +3359,7 @@ function timeForIndex(index:number){
 }
 
 .preview-card {
-  bottom: 114px;
+  bottom: 144px;
   left: 24px;
   right: 24px;
 }
@@ -3379,16 +3379,16 @@ function timeForIndex(index:number){
   z-index: 1;
   left: 24px;
   right: 24px;
-  bottom: 48px;
+  bottom: 50px;
   display: grid;
   grid-template-columns: repeat(4,1fr);
-  gap: 8px;
+  gap: 12px;
 }
 
 .preview-gallery button {
   position: relative;
   overflow: hidden;
-  height: 54px;
+  height: clamp(68px, 5.4vw, 82px);
   border: 1px solid rgba(255,255,255,.35);
   border-radius: 12px;
   padding: 0;

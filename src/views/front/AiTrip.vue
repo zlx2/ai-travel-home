@@ -1635,10 +1635,11 @@ function timeForIndex(index:number){
           <div
             v-for="(s, idx) in loadingStages"
             :key="idx"
-            :class="['gen-stage', { current: idx === loadingStageIndex }]"
+            :class="['gen-stage', { done: idx < loadingStageIndex, current: idx === loadingStageIndex }]"
           >
-            <span class="gen-dot"></span>
+            <span class="gen-dot"><i></i></span>
             <span class="gen-stage-text">{{ s }}</span>
+            <small>{{ idx < loadingStageIndex ? '已完成' : idx === loadingStageIndex ? '进行中' : '等待中' }}</small>
           </div>
         </div>
 
@@ -1921,14 +1922,41 @@ function timeForIndex(index:number){
 }
 
 .gen-panel {
-  padding: 28px 32px 24px;
-  background: #fff;
-  border: 1px solid #eaf0f6;
+  position: relative;
+  overflow: hidden;
+  padding: 26px 34px 22px;
+  color: #172033;
+  border: 1px solid #dcefe8;
   border-radius: 20px;
-  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.04);
+  background:
+    radial-gradient(circle at 7% 0%, rgba(20, 184, 166, .10), transparent 26%),
+    linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,253,252,.96));
+  box-shadow: 0 20px 54px rgba(15, 23, 42, .08);
+}
+.gen-panel:before {
+  content: "";
+  position: absolute;
+  left: 28px;
+  right: 28px;
+  top: 86px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(20,184,166,.32), transparent);
+}
+.gen-panel:after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #0f9f8f, #0ea5e9, #0f9f8f);
+  opacity: .82;
 }
 
 .gen-head {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   gap: 16px;
@@ -1937,13 +1965,14 @@ function timeForIndex(index:number){
   flex-shrink: 0;
   width: 48px;
   height: 48px;
+  border: 1px solid rgba(255,255,255,.68);
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #0d9488, #0891b2);
+  background: linear-gradient(135deg, #0f9f8f, #0ea5e9);
   color: #fff;
   font-size: 24px;
-  box-shadow: 0 8px 20px rgba(13, 148, 136, 0.20);
+  box-shadow: 0 12px 24px rgba(15,159,143,.18);
 }
 .gen-headline { min-width: 0; }
 .gen-headline h3 {
@@ -1962,23 +1991,26 @@ function timeForIndex(index:number){
 
 /* ── Indeterminate shimmer bar ── */
 .gen-track {
-  margin-top: 20px;
-  height: 6px;
+  position: relative;
+  z-index: 1;
+  margin-top: 24px;
+  height: 4px;
   overflow: hidden;
   border-radius: 999px;
-  background: #eef2f6;
-  position: relative;
+  background: #e7eef5;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .08);
 }
 .gen-bar {
   height: 100%;
-  width: 38%;
+  width: 46%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #0d9488, #0ea5e9, #0d9488);
+  background: linear-gradient(90deg, #0f9f8f, #0ea5e9, #0f9f8f);
   background-size: 200% 100%;
   animation: genShimmer 1.6s ease-in-out infinite;
   position: absolute;
   top: 0;
   left: 0;
+  box-shadow: 0 0 12px rgba(15, 159, 143, .28);
 }
 @keyframes genShimmer {
   0% { transform: translateX(-20%); }
@@ -1988,53 +2020,125 @@ function timeForIndex(index:number){
 
 /* ── Stage steps ── */
 .gen-stages {
-  margin-top: 22px;
+  position: relative;
+  z-index: 1;
+  margin-top: 20px;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: 0;
+}
+.gen-stages:before {
+  content: "";
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  top: 20px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(15,159,143,.65), rgba(14,165,233,.34), rgba(203,213,225,.78));
 }
 .gen-stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  min-width: 0;
+  padding-top: 1px;
   text-align: center;
-  opacity: 0.4;
-  transition: opacity 0.35s ease;
+  opacity: .72;
+  transition: opacity 0.35s ease, transform .35s ease;
 }
+.gen-stage.done,
 .gen-stage.current {
   opacity: 1;
 }
+.gen-stage.current {
+  transform: translateY(-2px);
+}
 .gen-dot {
-  width: 8px;
-  height: 8px;
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: #cbd5e1;
+  border: 2px solid #cbd5e1;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .08);
   transition: all 0.35s ease;
 }
+.gen-dot i {
+  width: 12px;
+  height: 12px;
+  border-radius: inherit;
+  background: #cbd5e1;
+  transition: all .35s ease;
+}
+.gen-stage.done .gen-dot {
+  border-color: rgba(15,159,143,.28);
+  background: linear-gradient(135deg, #0f9f8f, #0ea5e9);
+  box-shadow: 0 10px 22px rgba(15,159,143,.18);
+}
+.gen-stage.done .gen-dot i {
+  width: 13px;
+  height: 8px;
+  border-radius: 0;
+  border-left: 3px solid #fff;
+  border-bottom: 3px solid #fff;
+  background: transparent;
+  transform: translateY(-1px) rotate(-45deg);
+}
 .gen-stage.current .gen-dot {
-  width: 10px;
-  height: 10px;
-  background: #0d9488;
-  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.12);
+  border-color: rgba(15,159,143,.65);
+  background: #fff;
+  box-shadow: 0 0 0 7px rgba(15,159,143,.08), 0 12px 26px rgba(15,159,143,.20);
+  animation: genPulse 1.7s ease-in-out infinite;
+}
+.gen-stage.current .gen-dot:before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(15,159,143,.18);
+  border-radius: inherit;
+}
+.gen-stage.current .gen-dot i {
+  width: 13px;
+  height: 13px;
+  background: #0f9f8f;
+  box-shadow: 0 0 0 4px rgba(15,159,143,.10);
 }
 .gen-stage-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: #475569;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
   line-height: 1.3;
-  max-width: 80px;
+  max-width: 96px;
 }
+.gen-stage small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+}
+.gen-stage.done .gen-stage-text,
 .gen-stage.current .gen-stage-text {
-  color: #0d9488;
-  font-weight: 700;
+  color: #0f766e;
+  text-shadow: none;
+}
+.gen-stage.done small,
+.gen-stage.current small {
+  color: #0f9f8f;
 }
 
 /* ── Footer ── */
 .gen-foot {
-  margin-top: 18px;
+  position: relative;
+  z-index: 1;
+  margin-top: 20px;
   padding-top: 14px;
-  border-top: 1px solid #f0f4f9;
+  border-top: 1px solid #edf2f7;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2044,12 +2148,12 @@ function timeForIndex(index:number){
 .gen-elapsed {
   font-size: 13px;
   color: #94a3b8;
-  font-weight: 500;
+  font-weight: 700;
 }
 .gen-hint {
   font-size: 12px;
-  color: #0d9488;
-  font-weight: 600;
+  color: #0f9f8f;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2057,6 +2161,10 @@ function timeForIndex(index:number){
 }
 .gen-hint.warn {
   color: #d97706;
+}
+@keyframes genPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
 }
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(6px); }

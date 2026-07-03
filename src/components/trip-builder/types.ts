@@ -49,6 +49,8 @@ export interface DayMoment{
   type?:string
   compact?:boolean
   order?:number
+  nearbyHotels?:{ name:string; address:string; estimatedPrice?:string; distanceMeters?:number; lng:number; lat:number }[]
+  estimatedPrice?:string
 }
 
 export interface BuilderDay{

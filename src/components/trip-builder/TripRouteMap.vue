@@ -9,6 +9,7 @@ export interface TripMapPlace {
   lng: number
   lat: number
   type?: string
+  nearbyHotels?: { name: string; address: string; lng: number; lat: number; coordType?: string; distanceMeters?: number; tel?: string; rating?: string }[]
 }
 
 interface NearbyPoi {
@@ -56,6 +57,8 @@ let poiSearch:any=null
 let markers:any[]=[]
 let poiMarkers:any[]=[]
 let routeLine:any=null
+let hotelMarkers:any[]=[]
+const showHotelMarkers=ref(false)
 
 const activePlace=computed(()=>props.places[activeIndex.value]||props.places[0])
 const markerTypeClass=(type?:string)=>{
@@ -132,6 +135,8 @@ const clearMap=()=>{
   clearNearby()
   if(markers.length)map.remove(markers)
   markers=[]
+  if(hotelMarkers.length){map.remove(hotelMarkers);hotelMarkers=[]}
+  showHotelMarkers.value=false
 }
 
 const refreshMarkerState=()=>{
@@ -200,6 +205,35 @@ const createTripMarkers=()=>{
     return marker
   })
   map.add(markers)
+  // build nearby hotel markers (controlled by toolbar toggle)
+  if(hotelMarkers.length){map.remove(hotelMarkers);hotelMarkers=[]}
+  const hotelMkList:any[]=[]
+  props.places.forEach((place)=>{
+    if(place.nearbyHotels?.length){
+      place.nearbyHotels.forEach((hotel:any)=>{
+        const hMarker=new AMap.Marker({
+          position:[hotel.lng,hotel.lat],
+          content:'<div class="ai-poi-marker hotel"><span>🏨</span></div>',
+          anchor:'bottom-center',
+          title:hotel.name,
+          zIndex:100,
+        })
+        hMarker.on('click',()=>{
+          if(!infoWindow)return
+          infoWindow.setContent(`<div class="ai-map-info"><strong>酒店：${hotel.name}</strong><span>${hotel.distanceMeters?hotel.distanceMeters+' 米':''}</span><p>${hotel.address||''}</p></div>`)
+          infoWindow.open(map,[hotel.lng,hotel.lat])
+        })
+        hotelMkList.push(hMarker)
+      })
+    }
+  })
+  hotelMarkers=hotelMkList
+  if(hotelMarkers.length){
+    map.add(hotelMarkers)
+    if(!showHotelMarkers.value){
+      hotelMarkers.forEach(m=>m.hide())
+    }
+  }
 }
 
 const parseRouteToPath=(route:any)=>{
@@ -348,6 +382,19 @@ const searchNearby=async(type:NearbyType)=>{
   }
 }
 
+const toggleHotelMarkers=()=>{
+  if(!map)return
+  showHotelMarkers.value=!showHotelMarkers.value
+  hotelMarkers.forEach(m=>{
+    if(showHotelMarkers.value)m.show();else m.hide()
+  })
+  if(showHotelMarkers.value&&hotelMarkers.length){
+    const overlays=[...markers,...hotelMarkers]
+    if(routeLine)overlays.push(routeLine)
+    map.setFitView(overlays,false,[76,44,44,44])
+  }
+}
+
 const initMap=async()=>{
   loading.value=true
   mapError.value=''
@@ -401,7 +448,8 @@ onBeforeUnmount(()=>{
         </button>
         <template v-if="!toolbarCollapsed">
           <button class="tool-chip" :class="{ active: activeNearbyType==='food' }" :disabled="nearbyLoading" @click="searchNearby('food')"><span class="tool-dot food"></span>美食</button>
-          <button class="tool-chip" :class="{ active: activeNearbyType==='hotel' }" :disabled="nearbyLoading" @click="searchNearby('hotel')"><span class="tool-dot hotel"></span>酒店</button>
+          <button class="tool-chip" :class="{ active: activeNearbyType==='night' }" :disabled="nearbyLoading" @click="searchNearby('night')"><span class="tool-dot night"></span>夜市</button>
+          <button class="tool-chip" :class="{ active: showHotelMarkers }" @click="toggleHotelMarkers"><span class="tool-dot hotel"></span>酒店</button>
         </template>
         <button class="tool-chip toggle-chip" @click="toolbarCollapsed=!toolbarCollapsed">{{ toolbarCollapsed ? '更多' : '收起' }}</button>
       </section>

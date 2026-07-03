@@ -265,6 +265,7 @@ const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.
   lng:moment.lng,
   lat:moment.lat,
   type:moment.type,
+  nearbyHotels:(moment as any).nearbyHotels,
 })):[])
 
 const promptDaysValue=()=>Number(userInput.value.match(/(\d+)\s*天/)?.[1]||0)
@@ -1158,6 +1159,8 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     type:activity?.type,
     compact:activity?.compact,
     order:activity?.order,
+    nearbyHotels:activity?.nearbyHotels,
+    estimatedPrice:activity?.estimatedPrice || (activity?.nearbyHotels?.[0] as any)?.estimatedPrice,
   }
 }
 

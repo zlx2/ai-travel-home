@@ -82,10 +82,10 @@ const dayOrderIssues=reactive<Record<number,string[]>>({})
 const form=reactive<Requirement>({
   departure:'上海',
   destination:'',
-  days:3,
-  budget:4000,
+  days:0,
+  budget:0,
   budgetType:'TOTAL',
-  peopleCount:3,
+  peopleCount:1,
   preferences:['自然风光','历史文化','美食体验'],
   pace:'LIGHT',
   avoidances:['不要太累'],
@@ -182,7 +182,7 @@ const syncFormFromSupplement = (text: string) => {
   if(/不要太累|不累/.test(text)&&!manualFields.avoidances&&!form.avoidances.includes('不要太累'))form.avoidances=[...form.avoidances,'不要太累']
 }
 watch(userInput, syncFormFromSupplement)
-watch(()=>form.destination,value=>{ if(value)landingError.value='' })
+watch(()=>[form.destination,form.days],()=>{ if(String(form.destination||'').trim()&&Number(form.days||0))landingError.value='' })
 const fieldInput=ref<HTMLInputElement|null>(null)
 watch(editingField, async v=>{ if(v){ await nextTick(); fieldInput.value?.focus(); fieldInput.value?.select() } })
 
@@ -199,9 +199,10 @@ const hasRental=computed(()=>{
   return !explicitNoRental.value
 })
 const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')?'出行方式：落地租车':'路线模式：租车自驾'):'城市轻松游')
-const landingDestination=computed(()=>form.destination||'杭州')
-const landingPreviewTitle=computed(()=>`${landingDestination.value} ${form.days || 3} 日轻松慢游`)
-const landingPreviewSubtitle=computed(()=>`${landingDestination.value}漫步、历史街区、本地餐饮与舒适交通安排。`)
+const landingDestination=computed(()=>form.destination||'目的地待定')
+const landingPreviewDays=computed(()=>form.days?`${form.days} 天`:'天数待定')
+const landingPreviewTitle=computed(()=>form.destination&&form.days?`${form.destination} ${form.days} 日轻松慢游`:'选择灵感后完善行程')
+const landingPreviewSubtitle=computed(()=>form.destination?`${form.destination}漫步、历史街区、本地餐饮与舒适交通安排。`:'先补全目的地和天数，再生成你的每日路线。')
 const landingPreviewImages=computed(()=>[
   homeImage('hangzhou.jpg', true),
   homeImage('xian.jpg', true),
@@ -507,9 +508,11 @@ const applyExample=(value:string)=>{
   if(daysText) setFormDays(daysText[1])
   const budgetText=value.match(/预算(?:在)?\s*(\d+)/)
   if(budgetText)form.budget=Number(budgetText[1])
-  if(/父母|老人/.test(value))form.peopleCount=3
   if(/1人|一个人|独自/.test(value))form.peopleCount=1
   if(/2人|两人|情侣/.test(value))form.peopleCount=2
+  const peopleText=value.match(/(\d+)\s*人|([一二两三四五六七八九十])个人/)
+  const chinesePeople:Record<string,number>={一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10}
+  if(peopleText)form.peopleCount=peopleText[1]?Number(peopleText[1]):chinesePeople[peopleText[2]]
   if(/轻松|不要太累|不累/.test(value))form.pace='LIGHT'
   syncRouteScopeToDestination(form)
   userInput.value=templateSupplement(value)
@@ -539,14 +542,27 @@ const confirmedRequirementSummary=computed(()=>{
   const parts=[
     form.departure?`${form.departure}出发`:'',
     form.destination||'请填写目的地',
-    `${form.days||1} 天`,
+    form.days?`${form.days} 天`:'请填写天数',
     `${form.peopleCount||1} 人`,
-    form.budget?`¥${form.budget} 内`:'预算待定',
+    form.budget?`¥${form.budget} 内`:'预算不限',
     paceText(form.pace),
     form.preferences.length?form.preferences.join('/'):'',
   ].filter(Boolean)
   return parts.join(' · ')
 })
+
+const requiredTripFields=computed(()=>[
+  {key:'destination',label:'目的地',missing:!String(form.destination||'').trim()},
+  {key:'days',label:'天数',missing:!Number(form.days||0)},
+])
+const missingTripFields=computed(()=>requiredTripFields.value.filter(item=>item.missing))
+const hasRequiredTripFields=computed(()=>missingTripFields.value.length===0)
+const requiredTripHint=computed(()=>missingTripFields.value.length
+  ? `还差 ${missingTripFields.value.length} 项关键信息`
+  : '关键信息已就绪')
+const budgetDisplay=computed(()=>form.budget?`¥${form.budget} 内`:'不限')
+const destinationDisplay=computed(()=>form.destination||'待填写')
+const daysDisplay=computed(()=>form.days?`${form.days} 天`:'待填写')
 
 const buildDraftRequirement=()=>{
   const source={...(result.value?.requirement||{}),...form}
@@ -625,8 +641,8 @@ const applyFollowUpAnswers=(target:any)=>{
 }
 
 const analyze=async()=>{
-  if(!form.destination){
-    landingError.value='先填写目的地，或者选择一个旅行灵感模板，我再帮你生成行程。'
+  if(!hasRequiredTripFields.value){
+    landingError.value='请先补全目的地和天数，我再帮你生成行程。'
     return
   }
   analyzing.value=true
@@ -1305,9 +1321,25 @@ function timeForIndex(index:number){
           </header>
           <p class="hero-lead">先确认目的地、天数、人数和预算，再让 AI 生成路线。模板可以快速填充，下面的信息随时可以改。</p>
 
-          <div v-if="landingError" class="landing-alert">
-            <span>需要补充</span>
-            <b>{{ landingError }}</b>
+          <div v-if="landingError || missingTripFields.length" class="landing-alert">
+            <div class="alert-icon"><el-icon><Loading/></el-icon></div>
+            <div class="alert-copy">
+              <b>{{ requiredTripHint }}</b>
+              <span>{{ landingError || '完善以下信息，AI 将为你生成更贴合的行程' }}</span>
+            </div>
+            <div class="alert-required-tags">
+              <button
+                v-for="field in requiredTripFields"
+                :key="field.key"
+                type="button"
+                :class="{ missing: field.missing }"
+                @click="editingField=field.key==='destination'?'dest':'days'"
+              >
+                <el-icon><Location v-if="field.key==='destination'"/><Calendar v-else/></el-icon>
+                <span>{{ field.label }}</span>
+                <em>{{ field.missing ? '必填' : '已填' }}</em>
+              </button>
+            </div>
           </div>
 
           <div class="hero-input-shell">
@@ -1342,13 +1374,13 @@ function timeForIndex(index:number){
             <small>改这里，生成结果就跟着变</small>
           </div>
           <div class="quick-fields">
-            <button type="button" v-if="editingField!='dest'" @click="editingField='dest'"><el-icon><Location/></el-icon><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
+            <button type="button" v-if="editingField!='dest'" :class="{ missing: !form.destination }" @click="editingField='dest'"><el-icon><Location/></el-icon><b>目的地</b><span>{{ destinationDisplay }}</span><em>{{ form.destination ? '✓' : '待完善' }}</em></button>
             <label v-else class="quick-edit"><el-icon><Location/></el-icon><b>目的地</b><input v-model="form.destination" placeholder="输入城市名" @input="markDestinationEdited" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
-            <button type="button" v-if="editingField!='days'" @click="editingField='days'"><el-icon><Calendar/></el-icon><b>天数</b><span>{{ form.days }} 天</span></button>
+            <button type="button" v-if="editingField!='days'" :class="{ missing: !form.days }" @click="editingField='days'"><el-icon><Calendar/></el-icon><b>天数</b><span>{{ daysDisplay }}</span><em>{{ form.days ? '✓' : '待完善' }}</em></button>
             <label v-else class="quick-edit"><el-icon><Calendar/></el-icon><b>天数</b><input v-model.number="form.days" type="number" min="1" max="7" @input="markFieldEdited('days')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
-            <button type="button" v-if="editingField!='people'" @click="editingField='people'"><el-icon><User/></el-icon><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
+            <button type="button" v-if="editingField!='people'" @click="editingField='people'"><el-icon><User/></el-icon><b>人数</b><span>{{ form.peopleCount || 1 }} 人</span><em>✓</em></button>
             <label v-else class="quick-edit"><el-icon><User/></el-icon><b>人数</b><input v-model.number="form.peopleCount" type="number" min="1" max="20" @input="markFieldEdited('peopleCount')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
-            <button type="button" v-if="editingField!='budget'" @click="editingField='budget'"><el-icon><Wallet/></el-icon><b>预算</b><span>¥{{ form.budget }} 内</span></button>
+            <button type="button" v-if="editingField!='budget'" @click="editingField='budget'"><el-icon><Wallet/></el-icon><b>预算</b><span>{{ budgetDisplay }}</span><em>✓</em></button>
             <label v-else class="quick-edit"><el-icon><Wallet/></el-icon><b>预算</b><input v-model.number="form.budget" type="number" min="0" step="500" @input="markFieldEdited('budget')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
           </div>
 
@@ -1373,7 +1405,7 @@ function timeForIndex(index:number){
           <img :key="activeLandingPreviewImage" :src="activeLandingPreviewImage" alt="行程预览">
           <div class="preview-topline">
             <span>{{ landingDestination }}</span>
-            <span>{{ form.days || 3 }} 天</span>
+            <span>{{ landingPreviewDays }}</span>
             <span>示例行程</span>
           </div>
           <div class="preview-card">
@@ -2960,6 +2992,99 @@ function timeForIndex(index:number){
   line-height: 1.5;
 }
 
+.product-hero .landing-alert {
+  margin: 16px 0 18px;
+  border: 1px solid #fed7aa;
+  border-radius: 18px;
+  display: grid;
+  grid-template-columns: 56px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 22px;
+  background: linear-gradient(135deg,rgba(255,251,235,.92),rgba(255,247,237,.72));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.64);
+  color: #7c2d12;
+}
+
+.landing-alert .alert-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #ea580c;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  font-size: 22px;
+}
+
+.landing-alert .alert-copy {
+  min-width: 0;
+}
+
+.landing-alert .alert-copy b {
+  display: block;
+  color: #172033;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.landing-alert .alert-copy span {
+  display: block;
+  margin-top: 6px;
+  border-radius: 0;
+  padding: 0;
+  color: #64748b;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alert-required-tags {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.alert-required-tags button {
+  height: 42px;
+  border: 1px solid #d9eee9;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 13px;
+  color: #172033;
+  background: rgba(255,255,255,.86);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.alert-required-tags button.missing {
+  border-color: #fed7aa;
+}
+
+.alert-required-tags .el-icon {
+  color: #0f9f8f;
+  font-size: 18px;
+}
+
+.alert-required-tags em {
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #ea580c;
+  background: #ffedd5;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.alert-required-tags button:not(.missing) em {
+  color: #047857;
+  background: #dcfce7;
+}
+
 .product-hero .hero-input-shell {
   position: relative;
   z-index: 1;
@@ -3169,6 +3294,43 @@ function timeForIndex(index:number){
   font-size: 16px;
   color: #101827;
   font-weight: 900;
+}
+
+.product-hero .quick-fields button {
+  position: relative;
+}
+
+.product-hero .quick-fields button.missing {
+  border-color: #fb923c;
+  background: linear-gradient(135deg,#fff 0%,#fff7ed 100%);
+}
+
+.product-hero .quick-fields em {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  color: #0f766e;
+  background: #dcfce7;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.product-hero .quick-fields button.missing em {
+  color: #ea580c;
+  background: #ffedd5;
+}
+
+.product-hero .quick-fields button.missing span {
+  color: #172033;
 }
 .quick-edit{height:68px;border:1px solid #e3eaf2;border-radius:14px;background:#fbfcfe;display:flex;flex-direction:column;justify-content:center;padding:10px 14px;gap:4px}
 .quick-edit b{font-size:13px;color:#687589}

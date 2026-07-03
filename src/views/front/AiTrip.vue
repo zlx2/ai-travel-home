@@ -266,7 +266,7 @@ const generationNoticeDay=computed(()=>pendingDayNo.value||currentDay.value?.day
 const generationNoticeText=computed(()=>pendingDayNo.value?'正在生成下一天，当前已确认内容会保留。':'正在替换当前 Day，并避开已确认景点。')
 const lockedCount=computed(()=>days.value.filter(day=>day.status==='locked').length)
 const progressStyle=computed(()=>({background:`conic-gradient(#10b981 ${Math.round((lockedCount.value/Math.max(days.value.length,1))*360)}deg,#e5eaf0 0deg)`}))
-const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.value.moments.filter((moment):moment is DayMoment&{lng:number;lat:number}=>hasMomentLocation(moment)).map((moment)=>({
+const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.value.moments.filter((moment):moment is DayMoment&{lng:number;lat:number}=>isMapMoment(moment)).map((moment)=>({
   title:moment.title,
   time:moment.time.split('-')[0],
   desc:moment.description,
@@ -1021,6 +1021,14 @@ function isUtilityTimelineType(type?:string){
 
 function hasMomentLocation(moment:DayMoment){
   return typeof moment.lng==='number'&&typeof moment.lat==='number'
+}
+
+function isMealMoment(moment:{type?:string}){
+  return ['LUNCH_AREA','DINNER_AREA'].includes(String(moment.type||''))
+}
+
+function isMapMoment(moment:DayMoment){
+  return hasMomentLocation(moment)&&!isMealMoment(moment)
 }
 
 function isRouteOnlyMoment(moment:{type?:string}){

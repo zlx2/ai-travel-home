@@ -130,7 +130,16 @@ const mealReason=(moment:DayMoment)=>{
           <button class="detail-toggle" type="button" @click="toggleDetail(moment.key)">
             {{ expandedKey===moment.key ? '收起' : '详情' }}
           </button>
-          <div v-if="expandedKey===moment.key" class="moment-detail" :class="{ meal: isMealMoment(moment) }">
+          <div v-if="expandedKey===moment.key && moment.type==='STAY_AREA'" class="moment-detail">
+            <div v-if="moment.address"><b>地址</b><span>{{ moment.address }}</span></div>
+            <div v-if="moment.estimatedPrice || moment.nearbyHotels?.[0]?.estimatedPrice"><b>参考价</b><span>{{ moment.estimatedPrice || moment.nearbyHotels?.[0]?.estimatedPrice }}</span></div>
+          </div>
+          <div v-else-if="expandedKey===moment.key && (moment.type==='TRANSFER'||moment.type==='DAY_START') && moment.nearbyHotels?.length" class="moment-detail">
+            <div v-if="moment.nearbyHotels[0].name"><b>住宿</b><span>{{ moment.nearbyHotels[0].name }}</span></div>
+            <div v-if="moment.nearbyHotels[0].address"><b>地址</b><span>{{ moment.nearbyHotels[0].address }}</span></div>
+            <div v-if="moment.nearbyHotels[0].estimatedPrice"><b>参考价</b><span>{{ moment.nearbyHotels[0].estimatedPrice }}</span></div>
+          </div>
+          <div v-else-if="expandedKey===moment.key" class="moment-detail" :class="{ meal: isMealMoment(moment) }">
             <template v-if="isMealMoment(moment)">
               <div><b>用餐区域</b><span>{{ mealArea(moment) }}附近</span></div>
               <div v-if="moment.suggestedDuration"><b>建议停留</b><span>{{ moment.suggestedDuration }}</span></div>

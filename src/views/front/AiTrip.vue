@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loading, MagicStick } from '@element-plus/icons-vue'
+import { Calendar, Location, Loading, MagicStick, User, Wallet } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import { aiApi, rentalApi, tripApi } from '../../api'
@@ -28,10 +28,18 @@ const generateProgress=ref(1)
 const generateProgressLabel=ref('准备生成行程')
 let generateTimer:number|undefined
 
-// 生成阶段轮播（纯前端展示，不代表后端真实进度）
+// 生成阶段（由后端 SSE event.node 驱动，非定时器轮播）
 const loadingStages=['整理旅行需求','规划每日路线','匹配景点与餐饮','优化交通与时间','生成完整行程']
 const loadingStageIndex=ref(0)
-let stageTimer:number|undefined
+// 后端节点名 → 前端步骤索引映射
+const NODE_TO_STAGE:Record<string,number>={
+  'start':0,'prepare-session':0,
+  'generating-day1':1,
+  'parsing-result':2,'assembling-timeline':2,
+  'calculating-budget':3,'prefetching-next':3,
+  'finalizing':4,
+}
+let previewTimer:number|undefined
 const showLongWaitHint30=ref(false)
 const showLongWaitHint90=ref(false)
 
@@ -40,7 +48,7 @@ watch(generateElapsed,(val)=>{
   else if(val>=30)showLongWaitHint30.value=true
 })
 
-onUnmounted(()=>{ stopGenerateTimer();stopStageTimer() })
+onUnmounted(()=>{ stopGenerateTimer();stopPreviewCarousel() })
 const saving=ref(false)
 const confirming=ref(false)
 const orderCreated=ref(false)
@@ -132,6 +140,7 @@ const setIfNotManual=<K extends keyof Requirement>(field:K,value:Requirement[K])
 }
 
 onMounted(()=>{
+  startPreviewCarousel()
   if(route.query.destination){
     form.destination=String(route.query.destination)
     setFormDays(route.query.days||3)
@@ -190,6 +199,62 @@ const hasRental=computed(()=>{
   return !explicitNoRental.value
 })
 const routeMode=computed(()=>hasRental.value?(userInput.value.includes('落地')?'出行方式：落地租车':'路线模式：租车自驾'):'城市轻松游')
+const landingDestination=computed(()=>form.destination||'杭州')
+const landingPreviewTitle=computed(()=>`${landingDestination.value} ${form.days || 3} 日轻松慢游`)
+const landingPreviewSubtitle=computed(()=>`${landingDestination.value}漫步、历史街区、本地餐饮与舒适交通安排。`)
+const landingPreviewImages=computed(()=>[
+  homeImage('hangzhou.jpg', true),
+  homeImage('xian.jpg', true),
+  homeImage('chengdu.jpg', true),
+  homeImage('chongqing.jpg', true),
+])
+const landingPreviewIndex=ref(0)
+const activeLandingPreviewImage=computed(()=>landingPreviewImages.value[landingPreviewIndex.value]||landingPreviewImages.value[0])
+const setLandingPreview=(index:number)=>{
+  landingPreviewIndex.value=index%landingPreviewImages.value.length
+}
+const startPreviewCarousel=()=>{
+  stopPreviewCarousel()
+  previewTimer=window.setInterval(()=>{
+    setLandingPreview(landingPreviewIndex.value+1)
+  },3200)
+}
+const stopPreviewCarousel=()=>{
+  if(previewTimer){
+    clearInterval(previewTimer)
+    previewTimer=undefined
+  }
+}
+const landingInspirationCards=[
+  {
+    tag:'高铁到达',
+    title:'杭州父母慢游',
+    subtitle:'东站取车 · 同城还车',
+    image:homeImage('hangzhou.jpg', true),
+    prompt:'上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。',
+  },
+  {
+    tag:'机场落地',
+    title:'成都落地自驾',
+    subtitle:'机场到达 · 近郊自驾',
+    image:homeImage('chengdu.jpg', true),
+    prompt:'上海出发，飞到成都玩3天，成都双流机场下飞机，想租车自驾，喜欢自然风光、历史文化和美食，节奏轻松，预算在4000元以内。',
+  },
+  {
+    tag:'跨城测试',
+    title:'成都周边串联',
+    subtitle:'多城市 · 异地还车',
+    image:homeImage('chongqing.jpg', true),
+    prompt:'重庆出发，去成都和都江堰玩4天，成都东站下车，想租车自驾，多城市串联，喜欢美食和历史文化，预算在6000元以内。',
+  },
+  {
+    tag:'亲子短途',
+    title:'苏州周末自驾',
+    subtitle:'车站到达 · 城市短途',
+    image:homeImage('xian.jpg', true),
+    prompt:'上海出发，亲子去苏州玩2天，苏州站下车，想租车自驾，轻松一点，喜欢园林、古镇和本地美食，预算在3000元以内。',
+  },
+]
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
 const isQuoteSelectStep=computed(()=>step.value==='QUOTE_SELECT')
 const currentDay=computed(()=>days.value[currentDayIndex.value])
@@ -208,6 +273,7 @@ const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.
   lng:moment.lng,
   lat:moment.lat,
   type:moment.type,
+  nearbyHotels:(moment as any).nearbyHotels,
 })):[])
 
 const promptDaysValue=()=>Number(userInput.value.match(/(\d+)\s*天/)?.[1]||0)
@@ -650,7 +716,10 @@ const startDayBuilding=async()=>{
     const extras=hasRental.value?{selectedQuote:selectedBackendQuote.value,rentalTripContext}:undefined
     const data=await aiApi.generateStream(result.value.conversationId,result.value.requirement,event=>{
       if(event.label)generateProgressLabel.value=event.label
-      if(typeof event.progress==='number')generateProgress.value=event.progress
+      if(event.node){
+        const s=NODE_TO_STAGE[event.node]
+        if(s!==undefined&&s>loadingStageIndex.value)loadingStageIndex.value=s
+      }
     },extras)
     assertFirstDayGenerated(data.tripPlan)
     generationSessionId.value=data.generationSessionId||''
@@ -675,7 +744,6 @@ const startDayBuilding=async()=>{
 
 function startGenerateTimer(){
   stopGenerateTimer()
-  stopStageTimer()
   generateElapsed.value=0
   generateProgress.value=1
   generateProgressLabel.value='开始生成行程'
@@ -685,23 +753,12 @@ function startGenerateTimer(){
   generateTimer=window.setInterval(()=>{
     generateElapsed.value+=1
   },1000)
-  // 阶段轮播每 4 秒推进一次
-  stageTimer=window.setInterval(()=>{
-    loadingStageIndex.value=(loadingStageIndex.value+1)%loadingStages.length
-  },4000)
 }
 
 function stopGenerateTimer(){
   if(generateTimer){
     window.clearInterval(generateTimer)
     generateTimer=undefined
-  }
-}
-
-function stopStageTimer(){
-  if(stageTimer){
-    window.clearInterval(stageTimer)
-    stageTimer=undefined
   }
 }
 
@@ -1101,6 +1158,8 @@ function buildMoment(key:string,period:string,time:string,activity:any,image:str
     type:activity?.type,
     compact:activity?.compact,
     order:activity?.order,
+    nearbyHotels:activity?.nearbyHotels,
+    estimatedPrice:activity?.estimatedPrice || (activity?.nearbyHotels?.[0] as any)?.estimatedPrice,
   }
 }
 
@@ -1207,7 +1266,7 @@ function timeForIndex(index:number){
         <div class="studio-panel" :class="{ analyzing }">
           <header class="studio-head">
             <div>
-              <p class="hero-kicker">PLANGO AI TRIP STUDIO</p>
+              <p class="hero-kicker"><el-icon><MagicStick/></el-icon> PLANGO AI TRIP STUDIO</p>
               <h1>先确认需求，再生成每日行程</h1>
             </div>
             <div class="studio-status">
@@ -1254,14 +1313,14 @@ function timeForIndex(index:number){
             <small>改这里，生成结果就跟着变</small>
           </div>
           <div class="quick-fields">
-            <button type="button" v-if="editingField!='dest'" @click="editingField='dest'"><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
-            <label v-else class="quick-edit"><b>目的地</b><input v-model="form.destination" placeholder="输入城市名" @input="markDestinationEdited" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
-            <button type="button" v-if="editingField!='days'" @click="editingField='days'"><b>天数</b><span>{{ form.days }} 天</span></button>
-            <label v-else class="quick-edit"><b>天数</b><input v-model.number="form.days" type="number" min="1" max="7" @input="markFieldEdited('days')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
-            <button type="button" v-if="editingField!='people'" @click="editingField='people'"><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
-            <label v-else class="quick-edit"><b>人数</b><input v-model.number="form.peopleCount" type="number" min="1" max="20" @input="markFieldEdited('peopleCount')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
-            <button type="button" v-if="editingField!='budget'" @click="editingField='budget'"><b>预算</b><span>¥{{ form.budget }} 内</span></button>
-            <label v-else class="quick-edit"><b>预算</b><input v-model.number="form.budget" type="number" min="0" step="500" @input="markFieldEdited('budget')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <button type="button" v-if="editingField!='dest'" @click="editingField='dest'"><el-icon><Location/></el-icon><b>目的地</b><span>{{ form.destination || '自动识别' }}</span></button>
+            <label v-else class="quick-edit"><el-icon><Location/></el-icon><b>目的地</b><input v-model="form.destination" placeholder="输入城市名" @input="markDestinationEdited" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <button type="button" v-if="editingField!='days'" @click="editingField='days'"><el-icon><Calendar/></el-icon><b>天数</b><span>{{ form.days }} 天</span></button>
+            <label v-else class="quick-edit"><el-icon><Calendar/></el-icon><b>天数</b><input v-model.number="form.days" type="number" min="1" max="7" @input="markFieldEdited('days')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <button type="button" v-if="editingField!='people'" @click="editingField='people'"><el-icon><User/></el-icon><b>人数</b><span>{{ form.peopleCount }} 人</span></button>
+            <label v-else class="quick-edit"><el-icon><User/></el-icon><b>人数</b><input v-model.number="form.peopleCount" type="number" min="1" max="20" @input="markFieldEdited('peopleCount')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
+            <button type="button" v-if="editingField!='budget'" @click="editingField='budget'"><el-icon><Wallet/></el-icon><b>预算</b><span>¥{{ form.budget }} 内</span></button>
+            <label v-else class="quick-edit"><el-icon><Wallet/></el-icon><b>预算</b><input v-model.number="form.budget" type="number" min="0" step="500" @input="markFieldEdited('budget')" @blur="editingField=''" @keyup.enter="editingField=''" ref="fieldInput"/></label>
           </div>
 
           <div v-if="analyzing" class="studio-running" aria-live="polite">
@@ -1282,16 +1341,35 @@ function timeForIndex(index:number){
         </div>
 
         <aside class="studio-preview">
-          <img :src="homeImage('hangzhou.jpg', true)" alt="行程预览">
+          <img :key="activeLandingPreviewImage" :src="activeLandingPreviewImage" alt="行程预览">
           <div class="preview-topline">
-            <span>杭州</span>
-            <span>3 天</span>
+            <span>{{ landingDestination }}</span>
+            <span>{{ form.days || 3 }} 天</span>
             <span>示例行程</span>
           </div>
           <div class="preview-card">
-            <span>AI Preview</span>
-            <b>杭州 3 日轻松慢游</b>
-            <p>西湖漫步、历史街区、本地餐饮与舒适交通安排。</p>
+            <b>{{ landingPreviewTitle }}</b>
+            <p>{{ landingPreviewSubtitle }}</p>
+          </div>
+          <div class="preview-gallery">
+            <button
+              v-for="(image,index) in landingPreviewImages"
+              :key="image"
+              type="button"
+              :class="{ active:index===landingPreviewIndex }"
+              @click="setLandingPreview(index)"
+            >
+              <img :src="image" alt="">
+            </button>
+          </div>
+          <div class="preview-dots">
+            <button
+              v-for="(image,index) in landingPreviewImages"
+              :key="`dot-${image}`"
+              type="button"
+              :class="{ active:index===landingPreviewIndex }"
+              @click="setLandingPreview(index)"
+            ></button>
           </div>
           <div class="preview-stats">
             <div><b>节奏轻松</b></div>
@@ -1304,6 +1382,14 @@ function timeForIndex(index:number){
       <section class="inspiration-block">
         <div class="section-head">
           <h3>旅行灵感</h3>
+          <span>查看更多 <i>›</i></span>
+        </div>
+        <div class="inspiration-grid visual-inspiration-grid">
+          <button v-for="card in landingInspirationCards" :key="card.title" @click="applyExample(card.prompt)">
+            <img :src="card.image" alt="">
+            <span>{{ card.tag }}</span>
+            <b>{{ card.title }}</b>
+          </button>
         </div>
         <div class="inspiration-grid">
           <button @click="applyExample('上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')"><span>高铁到达</span><b>杭州父母慢游</b><small>东站取车 · 同城还车</small></button>
@@ -1545,20 +1631,16 @@ function timeForIndex(index:number){
           </div>
         </div>
 
-        <!-- 不定进度条：流水 shimmer 效果 -->
-        <div class="gen-track">
-          <div class="gen-bar"></div>
-        </div>
-
         <!-- 阶段状态轮播 -->
         <div class="gen-stages">
           <div
             v-for="(s, idx) in loadingStages"
             :key="idx"
-            :class="['gen-stage', { current: idx === loadingStageIndex }]"
+            :class="['gen-stage', { done: idx < loadingStageIndex, current: idx === loadingStageIndex }]"
           >
-            <span class="gen-dot"></span>
+            <span class="gen-dot"><i></i></span>
             <span class="gen-stage-text">{{ s }}</span>
+            <small>{{ idx < loadingStageIndex ? '已完成' : idx === loadingStageIndex ? '进行中' : '等待中' }}</small>
           </div>
         </div>
 
@@ -1912,14 +1994,31 @@ function timeForIndex(index:number){
 }
 
 .gen-panel {
-  padding: 28px 32px 24px;
-  background: #fff;
-  border: 1px solid #eaf0f6;
+  position: relative;
+  overflow: hidden;
+  padding: 26px 34px 22px;
+  color: #172033;
+  border: 1px solid #dcefe8;
   border-radius: 20px;
-  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.04);
+  background:
+    radial-gradient(circle at 7% 0%, rgba(20, 184, 166, .10), transparent 26%),
+    linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,253,252,.96));
+  box-shadow: 0 20px 54px rgba(15, 23, 42, .08);
+}
+.gen-panel:after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #0f9f8f, #0ea5e9, #0f9f8f);
+  opacity: .82;
 }
 
 .gen-head {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   gap: 16px;
@@ -1928,13 +2027,14 @@ function timeForIndex(index:number){
   flex-shrink: 0;
   width: 48px;
   height: 48px;
+  border: 1px solid rgba(255,255,255,.68);
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #0d9488, #0891b2);
+  background: linear-gradient(135deg, #0f9f8f, #0ea5e9);
   color: #fff;
   font-size: 24px;
-  box-shadow: 0 8px 20px rgba(13, 148, 136, 0.20);
+  box-shadow: 0 12px 24px rgba(15,159,143,.18);
 }
 .gen-headline { min-width: 0; }
 .gen-headline h3 {
@@ -1951,81 +2051,139 @@ function timeForIndex(index:number){
   color: #64748b;
 }
 
-/* ── Indeterminate shimmer bar ── */
-.gen-track {
-  margin-top: 20px;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #eef2f6;
-  position: relative;
-}
-.gen-bar {
-  height: 100%;
-  width: 38%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0d9488, #0ea5e9, #0d9488);
-  background-size: 200% 100%;
-  animation: genShimmer 1.6s ease-in-out infinite;
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-@keyframes genShimmer {
-  0% { transform: translateX(-20%); }
-  50% { transform: translateX(180%); }
-  100% { transform: translateX(360%); }
-}
-
 /* ── Stage steps ── */
 .gen-stages {
-  margin-top: 22px;
+  position: relative;
+  z-index: 1;
+  margin-top: 26px;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: 0;
+}
+.gen-stages:before {
+  content: "";
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  top: 20px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(15,159,143,.65), rgba(14,165,233,.34), rgba(203,213,225,.78));
 }
 .gen-stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
   text-align: center;
-  opacity: 0.4;
-  transition: opacity 0.35s ease;
+  opacity: .72;
+  transition: opacity 0.35s ease, transform .35s ease;
 }
+.gen-stage.done,
 .gen-stage.current {
   opacity: 1;
 }
+.gen-stage.current {
+  transform: translateY(-2px);
+}
 .gen-dot {
-  width: 8px;
-  height: 8px;
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: #cbd5e1;
+  border: 2px solid #cbd5e1;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .08);
   transition: all 0.35s ease;
 }
+.gen-dot i {
+  width: 12px;
+  height: 12px;
+  border-radius: inherit;
+  background: #cbd5e1;
+  transition: all .35s ease;
+}
+
+/* ── Completed state: teal solid circle with checkmark ── */
+.gen-stage.done .gen-dot {
+  border-color: rgba(15,159,143,.28);
+  background: linear-gradient(135deg, #0f9f8f, #0ea5e9);
+  box-shadow: 0 8px 20px rgba(15,159,143,.22);
+}
+.gen-stage.done .gen-dot i {
+  width: 13px;
+  height: 8px;
+  border-radius: 0;
+  border-left: 3px solid #fff;
+  border-bottom: 3px solid #fff;
+  background: transparent;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+/* ── Active state: heartbeat + pulse-ring ── */
 .gen-stage.current .gen-dot {
-  width: 10px;
-  height: 10px;
-  background: #0d9488;
-  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.12);
+  border-color: rgba(15,159,143,.50);
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(15,159,143,.12);
+}
+.gen-stage.current .gen-dot i {
+  width: 14px;
+  height: 14px;
+  background: #0f9f8f;
+  box-shadow: 0 0 0 4px rgba(15,159,143,.10);
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+.gen-stage.current .gen-dot::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(15,159,143,.25);
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Pending state: gray (default dot styling applies) ── */
+.gen-stage:not(.done):not(.current) .gen-stage-text {
+  color: #94a3b8;
+}
+.gen-stage:not(.done):not(.current) small {
+  color: #cbd5e1;
 }
 .gen-stage-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: #475569;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
   line-height: 1.3;
-  max-width: 80px;
+  max-width: 96px;
 }
+.gen-stage small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+}
+.gen-stage.done .gen-stage-text,
 .gen-stage.current .gen-stage-text {
-  color: #0d9488;
-  font-weight: 700;
+  color: #0f766e;
+  text-shadow: none;
+}
+.gen-stage.done small,
+.gen-stage.current small {
+  color: #0f9f8f;
 }
 
 /* ── Footer ── */
 .gen-foot {
-  margin-top: 18px;
+  position: relative;
+  z-index: 1;
+  margin-top: 20px;
   padding-top: 14px;
-  border-top: 1px solid #f0f4f9;
+  border-top: 1px solid #edf2f7;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2035,12 +2193,12 @@ function timeForIndex(index:number){
 .gen-elapsed {
   font-size: 13px;
   color: #94a3b8;
-  font-weight: 500;
+  font-weight: 700;
 }
 .gen-hint {
   font-size: 12px;
-  color: #0d9488;
-  font-weight: 600;
+  color: #0f9f8f;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2049,6 +2207,24 @@ function timeForIndex(index:number){
 .gen-hint.warn {
   color: #d97706;
 }
+
+/* ── Heartbeat for active step center dot ── */
+@keyframes heartbeat {
+  0%   { transform: scale(1); }
+  12%  { transform: scale(1.22); }
+  24%  { transform: scale(1); }
+  36%  { transform: scale(1.12); }
+  56%  { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+/* ── Pulse ring for active step ── */
+@keyframes pulse-ring {
+  0%   { transform: scale(0.75); opacity: 0.5; }
+  60%  { transform: scale(1.6);  opacity: 0; }
+  100% { transform: scale(1.6);  opacity: 0; }
+}
+
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -3065,13 +3241,15 @@ function timeForIndex(index:number){
   box-shadow: 0 18px 44px rgba(15,23,42,.14);
 }
 
-.studio-preview img {
+.studio-preview > img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   filter: saturate(1.06);
+  animation: previewFade .55s ease;
 }
 
 .studio-preview:after {
@@ -3174,9 +3352,428 @@ function timeForIndex(index:number){
 .product-hero .inspiration-grid b { margin-top:28px;font-size:17px; }
 .product-hero .inspiration-grid small { font-size:12px; }
 
+.product-hero {
+  min-height: auto;
+  padding: 14px 28px 0;
+  background:
+    radial-gradient(circle at 9% 8%, rgba(16,185,129,.10), transparent 30%),
+    radial-gradient(circle at 72% 4%, rgba(59,130,246,.11), transparent 32%),
+    linear-gradient(180deg,#fbfdff 0%,#f6f9fc 58%,#f8fafc 100%);
+}
+
+.studio-shell {
+  width: 100%;
+  max-width: 1680px;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 34vw, 540px);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.studio-panel {
+  min-height: 492px;
+  padding: 22px 34px;
+  border-radius: 24px;
+  background:
+    linear-gradient(100deg,rgba(236,253,245,.58),rgba(255,255,255,.95) 31%,rgba(255,255,255,.92) 67%,rgba(239,246,255,.78)),
+    #fff;
+  box-shadow: 0 34px 90px rgba(30,64,105,.13);
+}
+
+.studio-panel h1 {
+  max-width: 780px;
+  font-size: 36px;
+  line-height: 1.12;
+}
+
+.hero-kicker {
+  padding: 7px 13px;
+  gap: 8px;
+  font-size: 13px;
+  letter-spacing: 1.8px;
+  box-shadow: 0 10px 24px rgba(15,159,143,.08);
+}
+
+.studio-status {
+  min-width: 108px;
+  height: 38px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.hero-lead {
+  max-width: 920px;
+  margin: 10px 0 12px;
+  font-size: 15px;
+}
+
+.product-hero .hero-input-shell {
+  min-height: 154px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.88);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.86), 0 20px 54px rgba(30,64,105,.10);
+}
+
+.prompt-toolbar {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.prompt-toolbar span:first-child {
+  color: #0f8f81;
+}
+
+.product-hero .hero-input-shell textarea {
+  height: 66px;
+  font-size: 16px;
+  color: #10213b;
+}
+
+.hero-input-actions {
+  padding-top: 10px;
+}
+
+.hero-input-actions button {
+  min-width: 230px;
+  height: 46px;
+  border-radius: 16px;
+  font-size: 17px;
+}
+
+.confirmed-basis {
+  grid-template-columns: auto minmax(0,1fr);
+  min-height: 42px;
+  margin-top: 10px;
+  border-radius: 16px;
+  padding: 12px 16px;
+}
+
+.confirmed-basis span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.quick-title {
+  margin-top: 10px;
+}
+
+.quick-title small {
+  display: none;
+}
+
+.product-hero .quick-fields {
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.product-hero .quick-fields button,
+.quick-edit {
+  min-height: 66px;
+  height: 66px;
+  display: grid;
+  grid-template-columns: 36px minmax(0,1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 2px 12px;
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255,255,255,.82);
+}
+
+.product-hero .quick-fields .el-icon,
+.quick-edit .el-icon {
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: #0f9f8f;
+  font-size: 22px;
+}
+
+.product-hero .quick-fields b,
+.quick-edit b {
+  font-size: 13px;
+  color: #718096;
+}
+
+.product-hero .quick-fields span,
+.quick-edit input {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.studio-preview {
+  min-height: 0;
+  height: clamp(420px, 31vw, 520px);
+  aspect-ratio: auto;
+  border-radius: 24px;
+  box-shadow: 0 34px 82px rgba(15,23,42,.22);
+}
+
+.studio-preview:after {
+  background:
+    linear-gradient(180deg,rgba(7,16,30,.10) 0%,rgba(7,16,30,.12) 39%,rgba(7,16,30,.90) 100%),
+    linear-gradient(90deg,rgba(7,16,30,.34),transparent 62%);
+}
+
+.preview-topline {
+  top: 20px;
+  left: 24px;
+  right: 24px;
+}
+
+.preview-topline span {
+  padding: 8px 13px;
+  font-size: 14px;
+}
+
+.preview-card {
+  bottom: 144px;
+  left: 24px;
+  right: 24px;
+}
+
+.preview-card b {
+  margin-top: 0;
+  font-size: 25px;
+  line-height: 1.16;
+}
+
+.preview-card p {
+  font-size: 14px;
+}
+
+.preview-gallery {
+  position: absolute;
+  z-index: 1;
+  left: 24px;
+  right: 24px;
+  bottom: 50px;
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 12px;
+}
+
+.preview-gallery button {
+  position: relative;
+  overflow: hidden;
+  height: clamp(68px, 5.4vw, 82px);
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 12px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0,0,0,.20);
+}
+
+.preview-gallery img {
+  position: static;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.preview-gallery button.active {
+  border: 2px solid rgba(255,255,255,.90);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.22), 0 12px 28px rgba(0,0,0,.26);
+}
+
+.preview-dots {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+}
+
+.preview-dots button {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,.36);
+  padding: 0;
+  cursor: pointer;
+}
+
+.preview-dots button.active {
+  background: #fff;
+}
+
+.preview-stats {
+  display: none;
+}
+
+.product-hero .inspiration-block {
+  width: 100%;
+  max-width: 1680px;
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.section-head {
+  margin-bottom: 14px;
+  padding: 0 2px;
+}
+
+.section-head h3 {
+  font-size: 22px;
+}
+
+.section-head span {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.section-head i {
+  font-style: normal;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.visual-inspiration-grid + .inspiration-grid {
+  display: none;
+}
+
+.product-hero .visual-inspiration-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.product-hero .visual-inspiration-grid button {
+  position: relative;
+  height: clamp(196px, 11vw, 236px);
+  border: 1px solid rgba(255,255,255,.38);
+  border-radius: 20px;
+  overflow: hidden;
+  padding: 18px 20px 22px;
+  color: #fff;
+  background: #0f172a;
+  box-shadow: 0 22px 50px rgba(15,23,42,.18), inset 0 1px 0 rgba(255,255,255,.18);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  isolation: isolate;
+}
+
+.visual-inspiration-grid button:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255,255,255,.20), transparent 28%),
+    linear-gradient(180deg,rgba(7,16,30,.10),rgba(7,16,30,.18) 38%,rgba(7,16,30,.86));
+}
+
+.visual-inspiration-grid button:after {
+  content: none;
+}
+
+.visual-inspiration-grid img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(1.06) contrast(1.03);
+  transition: transform .35s ease, filter .35s ease;
+}
+
+.visual-inspiration-grid button:hover img {
+  transform: scale(1.055);
+  filter: saturate(1.12) contrast(1.06);
+}
+
+.product-hero .visual-inspiration-grid span,
+.product-hero .visual-inspiration-grid b,
+.product-hero .visual-inspiration-grid small {
+  position: relative;
+  z-index: 2;
+}
+
+.product-hero .visual-inspiration-grid span {
+  min-height: 30px;
+  padding: 6px 13px 6px 20px;
+  border: 1px solid rgba(255,255,255,.36);
+  background: rgba(15,23,42,.28);
+  color: #f8fafc;
+  font-size: 13px;
+  letter-spacing: 0;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px rgba(15,23,42,.22), inset 0 1px 0 rgba(255,255,255,.16);
+}
+
+.product-hero .visual-inspiration-grid span:before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #22d3ee;
+  transform: translateY(-50%);
+}
+
+.product-hero .visual-inspiration-grid button:nth-child(2) span {
+  border-color: rgba(255,255,255,.34);
+  background: rgba(255,255,255,.18);
+}
+
+.product-hero .visual-inspiration-grid button:nth-child(3) span {
+  border-color: rgba(255,255,255,.34);
+  background: rgba(255,255,255,.18);
+}
+
+.product-hero .visual-inspiration-grid button:nth-child(4) span {
+  border-color: rgba(255,255,255,.34);
+  background: rgba(255,255,255,.18);
+}
+
+.product-hero .visual-inspiration-grid button:nth-child(2) span:before {
+  background: #34d399;
+}
+
+.product-hero .visual-inspiration-grid button:nth-child(3) span:before {
+  background: #60a5fa;
+}
+
+.product-hero .visual-inspiration-grid button:nth-child(4) span:before {
+  background: #f472b6;
+}
+
+.product-hero .visual-inspiration-grid b {
+  margin-top: 0;
+  color: #fff;
+  font-size: 23px;
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-shadow: 0 3px 14px rgba(0,0,0,.42);
+}
+
+.product-hero .visual-inspiration-grid small {
+  display: none;
+}
+
 @keyframes studioScan {
   0% { transform: translateX(-110%); }
   58%, 100% { transform: translateX(110%); }
+}
+
+@keyframes previewFade {
+  from { opacity: .42; transform: scale(1.025); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes statusPulse {
@@ -3563,7 +4160,8 @@ function timeForIndex(index:number){
     grid-template-columns: 1fr;
   }
   .studio-preview {
-    min-height: 360px;
+    height: clamp(360px, 52vw, 460px);
+    min-height: 0;
   }
   .followup-layout {
     grid-template-columns: 1fr;

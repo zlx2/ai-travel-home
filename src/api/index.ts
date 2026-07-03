@@ -274,6 +274,10 @@ function normalizeTimelineNode(item: any, index: number) {
     type: item.type,
     compact: item.compact !== false,
     order: item.order ?? index + 1,
+    coordType: item.coordType,
+    nearbyHotels: item.nearbyHotels,
+    estimatedPrice: item.estimatedPrice,
+    hotel: item.hotel,
   }
 }
 

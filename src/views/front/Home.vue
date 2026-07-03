@@ -367,7 +367,7 @@ const imageOfNote = (note: Note) =>
 .panel-head a { font-size: 12px; color: #7f8998; cursor: pointer; transition: color .2s ease, transform .2s ease; }
 .panel-head a:hover { color: #176ff1; transform: translateX(2px); }
 .mini-destinations { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: clamp(7px, .5vw, 10px); }
-.mini-destinations button { aspect-ratio: 16 / 9; min-width: 0; border: 0; border-radius: 8px; overflow: hidden; position: relative; padding: 0; cursor: pointer; background: #ddd; transition: transform .24s ease, box-shadow .24s ease; }
+.mini-destinations button { aspect-ratio: 1 / 1; min-width: 0; border: 0; border-radius: 8px; overflow: hidden; position: relative; padding: 0; cursor: pointer; background: #ddd; transition: transform .24s ease, box-shadow .24s ease; }
 .mini-destinations button:hover { transform: translateY(-5px) rotate(-.4deg); box-shadow: 0 15px 28px rgba(31,57,86,.2); }
 .mini-destinations button:active { transform: translateY(-1px) scale(.97); }
 .mini-destinations img { width: 100%; height: 100%; display: block; object-fit: cover; transition: transform .42s ease, filter .42s ease; }
@@ -416,7 +416,7 @@ const imageOfNote = (note: Note) =>
 .mini-notes button { border: 0; background: transparent; text-align: left; padding: 0; min-width: 0; min-height: 0; cursor: pointer; border-radius: 10px; transition: transform .25s ease; }
 .mini-notes button:hover { transform: translateY(-5px); }
 .mini-notes button:active { transform: translateY(-1px) scale(.98); }
-.mini-notes img { width: 100%; height: auto; aspect-ratio: 16 / 9; display: block; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 18px rgba(31,57,86,.12); transition: transform .35s ease, box-shadow .35s ease; }
+.mini-notes img { width: 100%; height: auto; aspect-ratio: 1 / 1; display: block; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 18px rgba(31,57,86,.12); transition: transform .35s ease, box-shadow .35s ease; }
 .mini-notes button:hover img { transform: translateY(-2px); box-shadow: 0 16px 28px rgba(31,57,86,.22); }
 .mini-notes b { display: block; font-size: 13px; margin: 5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini-notes p { font-size: 11px; color: #6e7989; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

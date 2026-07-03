@@ -9,6 +9,7 @@ export interface TripMapPlace {
   lng: number
   lat: number
   type?: string
+  nearbyHotels?: { name: string; address: string; lng: number; lat: number; coordType?: string; distanceMeters?: number; tel?: string; rating?: string }[]
 }
 
 interface NearbyPoi {
@@ -200,6 +201,28 @@ const createTripMarkers=()=>{
     return marker
   })
   map.add(markers)
+  // show first recommended hotel marker per day
+  const seen=new Set<string>()
+  props.places.forEach((place)=>{
+    const hotel=place.nearbyHotels?.[0]
+    if(!hotel)return
+    const key=hotel.lng+','+hotel.lat
+    if(seen.has(key))return
+    seen.add(key)
+    const hMarker=new AMap.Marker({
+      position:[hotel.lng,hotel.lat],
+      content:'<div class="ai-poi-marker hotel"><span>🏨</span></div>',
+      anchor:'bottom-center',
+      title:hotel.name,
+      zIndex:100,
+    })
+    hMarker.on('click',()=>{
+      if(!infoWindow)return
+      infoWindow.setContent(`<div class="ai-map-info"><strong>酒店：${hotel.name}</strong><span>${hotel.distanceMeters?hotel.distanceMeters+' 米':''}</span><p>${hotel.address||''}</p></div>`)
+      infoWindow.open(map,[hotel.lng,hotel.lat])
+    })
+    map.add(hMarker)
+  })
 }
 
 const parseRouteToPath=(route:any)=>{

@@ -9,6 +9,7 @@ export interface TripMapPlace {
   lng: number
   lat: number
   type?: string
+  imageUrl?: string
   nearbyHotels?: { name: string; address: string; lng: number; lat: number; coordType?: string; distanceMeters?: number; tel?: string; rating?: string }[]
 }
 
@@ -70,7 +71,24 @@ const markerHtml=(index:number,active:boolean,type?:string)=>`<div class="ai-rou
 const foodMarkerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 3.1v7.2M10 3.1v7.2M4.4 3.1v7.2M4.4 10.3h5.6M7.2 10.3v10.6M16.5 3.4c2.1 1.5 3.2 3.7 3.2 6.7v2.3h-3.1v8.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"/></svg>'
 const hotelMarkerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V7a2 2 0 012-2h14a2 2 0 012 2v14M3 13h18M7 9h4M7 17h4M13 9h4M13 17h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>'
 const poiMarkerHtml=(type:NearbyType,index:number)=>`<div class="ai-poi-marker ${type}"><span>${type==='food'?foodMarkerIcon:type==='hotel'?hotelMarkerIcon:index+1}</span></div>`
-const infoHtml=(place:TripMapPlace,index:number)=>`<div class="ai-map-info"><strong>${index+1}. ${place.title}</strong><span>${place.time}</span><p>${place.desc}</p></div>`
+const placeHasRealCover=(place:TripMapPlace)=>!!place.imageUrl
+const placeCoverImage=(place:TripMapPlace)=>{
+  if(!placeHasRealCover(place))return ''
+  return `<div class="route-info-cover"><img src="${place.imageUrl}" alt="${place.title}"><span>${place.title}</span></div>`
+}
+const infoHtml=(place:TripMapPlace,index:number)=>`<div class="ai-info-shell route-info-shell ${placeHasRealCover(place)?'has-cover':'no-cover'}">
+  <button class="ai-info-close" type="button" aria-label="关闭">×</button>
+  ${placeCoverImage(place)}
+  <div class="ai-route-info">
+    <div class="route-info-badge">${String(index+1).padStart(2,'0')}</div>
+    <div class="route-info-body">
+      <strong>${place.title}</strong>
+      <span>${place.time}</span>
+      <p>${place.desc||'当前行程节点'}</p>
+    </div>
+  </div>
+</div>`
+const placePhotoCache=new Map<string,string>()
 const nearbyCoverImage=(poi:NearbyPoi)=>{
   if(poi.imageUrl)return `<img src="${poi.imageUrl}" alt="${poi.name}">`
   const title=poi.name.slice(0,8)
@@ -132,22 +150,22 @@ const hotelCoverImage=(poi:NearbyPoi)=>{
   return `<img src="data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}" alt="${poi.name}">`
 }
 const poiInfoHtml=(poi:NearbyPoi,type:NearbyType)=>{
-  if(type==='hotel')return `<div class="ai-hotel-card">
+  if(type==='hotel')return `<div class="ai-info-shell poi-info-shell"><button class="ai-info-close" type="button" aria-label="关闭">×</button><div class="ai-hotel-card">
     <div class="hotel-cover">${hotelCoverImage(poi)}<span>${poi.anchorTitle?`${poi.anchorTitle}周边`:'住宿推荐'}</span></div>
     <div class="hotel-body">
       <strong>${poi.name}</strong>
       <p class="hotel-meta"><b>${poi.rating||'4.5'}分</b><span>${poi.typeName||'酒店'}</span></p>
       <p class="hotel-address">📍 ${poi.address||'暂无地址'} · 距${poi.anchorTitle||'当前点'}${poi.distance?`${poi.distance}米`:'较近'}</p>
     </div>
-  </div>`
-  return `<div class="ai-food-card">
+  </div></div>`
+  return `<div class="ai-info-shell poi-info-shell"><button class="ai-info-close" type="button" aria-label="关闭">×</button><div class="ai-food-card">
     <div class="food-cover">${nearbyCoverImage(poi)}<span>${poi.anchorTitle?`${poi.anchorTitle}周边`:'美食推荐'}</span></div>
     <div class="food-body">
       <strong>${poi.name}</strong>
       <p class="food-meta"><b>${poi.rating||'4.6'}分</b><span>${poi.typeName||'本地餐饮'}</span><span>${poi.averageCost?`￥${poi.averageCost}/人`:'人均待查'}</span></p>
       <p class="food-address">📍 ${poi.address||'暂无地址'} · 距${poi.anchorTitle||'当前点'}${poi.distance?`${poi.distance}米`:'较近'}</p>
     </div>
-  </div>`
+  </div></div>`
 }
 
 const clearRouteLine=()=>{
@@ -178,21 +196,63 @@ const refreshMarkerState=()=>{
   markers.forEach((marker,index)=>marker.setContent(markerHtml(index,activeIndex.value===index,props.places[index]?.type)))
 }
 
-const openInfoWindow=(index:number)=>{
+const findPlacePhoto=async(place:TripMapPlace)=>{
+  const cacheKey=`${place.title}:${place.lng},${place.lat}`
+  if(place.imageUrl)return place.imageUrl
+  if(placePhotoCache.has(cacheKey))return placePhotoCache.get(cacheKey)||''
+  if(!AMap)return ''
+  return new Promise<string>(resolve=>{
+    const searcher=new AMap.PlaceSearch({pageSize:5,pageIndex:1,extensions:'all'})
+    searcher.searchNearBy(place.title,new AMap.LngLat(place.lng,place.lat),1200,(status:string,result:any)=>{
+      if(status!=='complete'||!result.poiList?.pois?.length){
+        placePhotoCache.set(cacheKey,'')
+        resolve('')
+        return
+      }
+      const normalized=result.poiList.pois
+        .map((poi:any)=>({name:String(poi.name||''),photos:Array.isArray(poi.photos)?poi.photos:[],distance:Number(poi.distance||9999)}))
+        .sort((left:any,right:any)=>{
+          const leftExact=left.name.includes(place.title)||place.title.includes(left.name)
+          const rightExact=right.name.includes(place.title)||place.title.includes(right.name)
+          if(leftExact!==rightExact)return leftExact?-1:1
+          return left.distance-right.distance
+        })
+      const photo=normalized.flatMap((poi:any)=>poi.photos).find((item:any)=>item?.url)?.url||''
+      placePhotoCache.set(cacheKey,photo)
+      resolve(photo)
+    })
+  })
+}
+
+const openInfoWindow=async(index:number)=>{
   if(!map||!infoWindow||!props.places[index])return
   const place=props.places[index]
   infoWindow.setContent(infoHtml(place,index))
   infoWindow.open(map,[place.lng,place.lat])
+  bindInfoClose()
+  const imageUrl=await findPlacePhoto(place)
+  if(imageUrl&&props.places[index]===place){
+    infoWindow.setContent(infoHtml({...place,imageUrl},index))
+    bindInfoClose()
+  }
 }
 
 const openPoiInfoWindow=(poi:NearbyPoi,type:NearbyType)=>{
   if(!map||!infoWindow)return
   infoWindow.setContent(poiInfoHtml(poi,type))
   infoWindow.open(map,[poi.lng,poi.lat])
+  bindInfoClose()
   if(type==='food'||type==='hotel'){
     map.panTo([poi.lng,poi.lat])
     window.setTimeout(()=>map?.panBy?.(0,140),80)
   }
+}
+
+function bindInfoClose(){
+  window.setTimeout(()=>{
+    const closeButton=mapEl.value?.querySelector('.ai-info-close') as HTMLButtonElement|null
+    closeButton?.addEventListener('click',()=>infoWindow?.close(),{once:true})
+  },0)
 }
 
 const focusPlace=(index:number,showInfo=false)=>{
@@ -398,7 +458,7 @@ const initMap=async()=>{
     map.addControl(new AMap.Scale())
     map.addControl(new AMap.ToolBar({position:'RB'}))
     driving=new AMap.Driving({policy:0})
-    infoWindow=new AMap.InfoWindow({isCustom:false,offset:new AMap.Pixel(0,-38)})
+    infoWindow=new AMap.InfoWindow({isCustom:true,offset:new AMap.Pixel(0,-42)})
     await renderRoute()
   }catch(error){
     console.error(error)
@@ -510,12 +570,190 @@ onBeforeUnmount(()=>{
   overflow:hidden;
   box-shadow:0 18px 46px rgba(15,23,42,.22)!important;
 }
+:global(.ai-info-shell){
+  position:relative;
+  filter:drop-shadow(0 18px 34px rgba(15,23,42,.24));
+}
+:global(.ai-info-close){
+  position:absolute;
+  right:10px;
+  top:10px;
+  z-index:5;
+  width:28px;
+  height:28px;
+  border:0;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  color:#fff;
+  background:rgba(15,23,42,.62);
+  box-shadow:0 8px 18px rgba(15,23,42,.22);
+  font-size:20px;
+  line-height:1;
+  cursor:pointer;
+  backdrop-filter:blur(8px);
+}
+:global(.route-info-shell .ai-info-close){
+  color:#475569;
+  background:rgba(255,255,255,.88);
+  box-shadow:0 8px 18px rgba(15,23,42,.12);
+}
+:global(.ai-info-close:hover){
+  background:rgba(15,23,42,.82);
+}
+:global(.route-info-shell .ai-info-close:hover){
+  color:#0f172a;
+  background:#fff;
+}
+:global(.ai-info-shell:after){
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:-8px;
+  width:16px;
+  height:16px;
+  transform:translateX(-50%) rotate(45deg);
+  background:#fff;
+  box-shadow:8px 8px 18px rgba(15,23,42,.08);
+}
+:global(.route-info-shell:after){
+  background:#f8fbff;
+}
+:global(.route-info-shell.has-cover:after){
+  background:#fff;
+}
+:global(.route-info-shell.no-cover:after){
+  background:#fff;
+}
+:global(.route-info-cover){
+  position:relative;
+  width:328px;
+  height:156px;
+  overflow:hidden;
+  border-radius:16px 16px 0 0;
+  background:#e5eef7;
+}
+:global(.route-info-cover img){
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+:global(.route-info-cover span){
+  position:absolute;
+  left:12px;
+  bottom:10px;
+  max-width:calc(100% - 24px);
+  overflow:hidden;
+  border-radius:999px;
+  padding:5px 10px;
+  color:#fff;
+  background:rgba(15,23,42,.62);
+  font-size:12px;
+  font-weight:900;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  backdrop-filter:blur(8px);
+}
+:global(.ai-route-info){
+  width:328px;
+  display:grid;
+  grid-template-columns:40px minmax(0,1fr);
+  gap:12px;
+  align-items:start;
+  border:1px solid rgba(15,159,143,.12);
+  border-radius:16px;
+  padding:16px;
+  background:#fff;
+  color:#172033;
+}
+:global(.route-info-shell.no-cover .ai-route-info){
+  width:328px;
+  grid-template-columns:42px minmax(0,1fr);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.72);
+  background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);
+}
+:global(.route-info-shell.no-cover .route-info-badge){
+  width:42px;
+  height:42px;
+  border-radius:11px;
+  font-size:15px;
+}
+:global(.route-info-shell.has-cover .ai-route-info){
+  border-top:0;
+  border-radius:0 0 16px 16px;
+  padding-top:15px;
+  background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);
+}
+:global(.route-info-shell.has-cover .route-info-badge){
+  align-self:start;
+}
+:global(.route-info-shell.has-cover .route-info-body strong){
+  display:inline-block;
+  max-width:calc(100% - 54px);
+  padding-right:28px;
+  font-size:18px;
+  vertical-align:top;
+}
+:global(.route-info-shell.has-cover .route-info-body){
+  display:contents;
+}
+:global(.route-info-shell.has-cover .route-info-body p){
+  display:-webkit-box;
+  overflow:hidden;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+}
+:global(.route-info-badge){
+  width:40px;
+  height:40px;
+  border-radius:12px;
+  display:grid;
+  place-items:center;
+  color:#fff;
+  background:linear-gradient(145deg,#0f9f8f,#2563eb);
+  font-size:15px;
+  font-weight:900;
+  box-shadow:0 8px 16px rgba(15,159,143,.18);
+}
+:global(.route-info-body){
+  min-width:0;
+}
+:global(.route-info-body strong){
+  display:block;
+  overflow:hidden;
+  color:#111827;
+  padding-right:30px;
+  font-size:20px;
+  line-height:1.25;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+:global(.route-info-body span){
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  margin-top:8px;
+  border-radius:999px;
+  padding:0 10px;
+  color:#047857;
+  background:#ecfdf5;
+  font-size:13px;
+  font-weight:800;
+}
+:global(.route-info-body p){
+  margin:10px 0 0;
+  color:#5f6f84;
+  font-size:14px;
+  line-height:1.55;
+}
 :global(.ai-food-card){
   width:292px;
   overflow:hidden;
   border-radius:16px;
-  background:#fff;
+  background:linear-gradient(180deg,#fff 0%,#fffaf4 100%);
   color:#111827;
+  border:1px solid rgba(249,115,22,.12);
 }
 :global(.food-cover){
   position:relative;
@@ -541,7 +779,9 @@ onBeforeUnmount(()=>{
   backdrop-filter:blur(8px);
 }
 :global(.food-body){
+  position:relative;
   padding:14px 16px 16px;
+  background:linear-gradient(180deg,#fff 0%,#fffaf4 100%);
 }
 :global(.food-body strong){
   display:block;
@@ -559,14 +799,21 @@ onBeforeUnmount(()=>{
   font-size:13px;
 }
 :global(.food-meta b){
-  border-radius:5px;
-  padding:2px 5px;
+  border-radius:7px;
+  padding:3px 7px;
   color:#fff;
-  background:#1478ff;
+  background:#2563eb;
   font-size:13px;
 }
 :global(.food-meta span){
+  min-height:22px;
+  display:inline-flex;
+  align-items:center;
+  border-radius:999px;
+  padding:0 8px;
   color:#475569;
+  background:#fff;
+  border:1px solid #f2e5d5;
 }
 :global(.food-address){
   margin:10px 0 0;
@@ -578,8 +825,9 @@ onBeforeUnmount(()=>{
   width:292px;
   overflow:hidden;
   border-radius:16px;
-  background:#fff;
+  background:linear-gradient(180deg,#fff 0%,#f7fbff 100%);
   color:#111827;
+  border:1px solid rgba(37,99,235,.12);
 }
 :global(.hotel-cover){
   position:relative;
@@ -606,6 +854,7 @@ onBeforeUnmount(()=>{
 }
 :global(.hotel-body){
   padding:14px 16px 16px;
+  background:linear-gradient(180deg,#fff 0%,#f7fbff 100%);
 }
 :global(.hotel-body strong){
   display:block;
@@ -623,14 +872,21 @@ onBeforeUnmount(()=>{
   font-size:13px;
 }
 :global(.hotel-meta b){
-  border-radius:5px;
-  padding:2px 5px;
+  border-radius:7px;
+  padding:3px 7px;
   color:#fff;
   background:#2563eb;
   font-size:13px;
 }
 :global(.hotel-meta span){
+  min-height:22px;
+  display:inline-flex;
+  align-items:center;
+  border-radius:999px;
+  padding:0 8px;
   color:#475569;
+  background:#fff;
+  border:1px solid #dbeafe;
 }
 :global(.hotel-address){
   margin:10px 0 0;

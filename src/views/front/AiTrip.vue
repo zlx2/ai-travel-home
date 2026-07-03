@@ -273,6 +273,7 @@ const currentMapPlaces=computed<TripMapPlace[]>(()=>currentDay.value?currentDay.
   lng:moment.lng,
   lat:moment.lat,
   type:moment.type,
+  imageUrl:moment.imageUrls?.[0],
   nearbyHotels:(moment as any).nearbyHotels,
 })):[])
 

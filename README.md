@@ -1,158 +1,156 @@
-# PlanGo 前端
+# PlanGo 智能旅行规划平台 · 前端
 
-PlanGo 智能旅行规划平台前端，当前处于联调开发阶段。项目使用 Vue 3 + TypeScript + Vite，包含首页、AI 行程规划、行程/游记页面、租车演示页，以及独立的高德地图测试页。
-
-## 当前状态
-
-- 主开发分支：`dev`，本地可能存在 `lab` 分支用于前端开发
-- 包管理器：`npm`
-- 开发端口：`5173`
-- 默认联调：请求走后端 `/api`
+基于 Vue 3 + TypeScript + Vite 的 AI 旅行规划 Web 端，结合高德地图提供从需求输入到行程可视化的完整交互体验。
 
 ## 技术栈
 
-- Vue `3`
-- TypeScript
-- Vite
-- Vue Router
-- Pinia
-- Element Plus
-- Axios
-- `@amap/amap-jsapi-loader` 高德 JSAPI Loader
-- `@kangc/v-md-editor` Markdown 编辑器
+| 能力 | 选型 |
+|------|------|
+| 框架 | Vue 3 + TypeScript |
+| 构建 | Vite 7 |
+| UI | Element Plus |
+| 状态管理 | Pinia |
+| 路由 | Vue Router 4 |
+| HTTP | Axios |
+| 地图 | 高德 JSAPI（@amap/amap-jsapi-loader） |
+| 编辑器 | @kangc/v-md-editor（Markdown） |
+| 包管理 | npm 11 |
 
-## 安装与启动
+## 页面路由
+
+| 路由 | 页面 | 说明 |
+|------|------|------|
+| `/` | 首页 | 聚合展示：热门目的地推荐、精选游记、标签云 |
+| `/login` | 登录 | 邮箱/用户名 + 密码 |
+| `/register` | 注册 | 邮箱验证码注册 |
+| `/forgot-password` | 重置密码 | 邮箱验证码重置 |
+| `/ai-trip` | AI 行程规划 | **核心页面**：自然语言输入 → 需求分析 → 流式生成完整行程 |
+| `/trips` | 我的行程 | 已保存行程列表 |
+| `/trips/:id` | 行程详情 | 完整行程查看（每日路线/景点/预算） |
+| `/notes` | 游记广场 | 用户游记列表（浏览/搜索） |
+| `/notes/:id` | 游记详情 | 含点赞、收藏、评论互动 |
+| `/notes/create` | 写游记 | Markdown 编辑器 |
+| `/notes/edit/:id` | 编辑游记 | 草稿续写/修改 |
+| `/car-rental` | 租车服务 | 租车报价/下单/支付演示 |
+| `/profile` | 个人中心 | 个人资料/行程统计/游记管理 |
+
+## 核心功能
+
+### AI 行程规划 (`/ai-trip`)
+
+这是平台的核心交互页面，采用多轮对话 + 流式生成的整体设计：
+
+**1. 需求输入**
+- 自然语言描述旅行意向（如"成都 3 天，带老人，不要太累"）
+- AI 实时解析并结构化展示（目的地、天数、预算、节奏偏好）
+- 支持追问补充（出发地、交通方式、饮食偏好等）
+
+**2. 行程生成**
+- SSE 流式推送生成进度（实时知道每个生成阶段的状态）
+- 逐日生成：先宏观路线 → 再逐天细化
+- 生成过程中可查看当前进度状态，无需等待完整结果
+- 支持单日重新生成（调整某一天的计划）
+
+**3. 结果展示**
+- 每日行程时间线（景点/路线/餐饮/预算）
+- 地图路线可视化（高德地图标注 + 路线连线）
+- 预算明细（门票/餐饮/交通/住宿）
+- 出行贴士
+
+### 游记系统 (`/notes`)
+
+- Markdown 编辑器撰写图文游记
+- 游记广场浏览、搜索、按标签筛选
+- 点赞 / 收藏 / 评论互动
+
+### 租车服务 (`/car-rental`)
+
+- 根据行程需求推荐租车方案
+- 报价对比（车型/价格/门店）
+- 下单 → 支付（支付宝沙箱演示）
+
+### 用户系统
+
+- 邮箱注册/登录
+- 个人资料编辑
+- 头像上传（腾讯云 COS）
+- 行程/游记数据统计
+
+## 组件架构
+
+```
+src/
+├── api/                  # API 调用层（auth / trip / note / rental / user / file）
+│   ├── index.ts          # 所有 API 封装 + 数据归一化
+│   ├── auth.ts           # 认证相关
+│   └── home.ts           # 首页相关
+├── assets/               # 静态资源（图片/样式）
+├── components/
+│   ├── trip-builder/     # AI 行程规划核心组件
+│   │   ├── DayPlanCard.vue          # 单日计划卡片
+│   │   ├── FinalReviewPanel.vue     # 最终行程总览面板
+│   │   ├── NaturalLanguageInputCard.vue  # 自然语言输入卡片
+│   │   ├── RentalQuoteDeck.vue      # 租车报价展示
+│   │   ├── RequirementSummaryBar.vue     # 需求摘要栏
+│   │   ├── TripProgressRail.vue     # 生成进度轨道
+│   │   ├── TripRouteMap.vue         # 高德地图路线组件
+│   │   └── types.ts                 # 组件类型定义
+│   └── ...                # 其他通用组件
+├── layouts/              # 布局
+│   └── FrontLayout.vue   # 前台布局（顶部导航 + 页脚）
+├── router/               # 路由配置（含登录守卫）
+├── stores/               # Pinia 状态管理
+├── types/                # TypeScript 类型定义
+├── utils/                # 工具函数
+│   ├── auth.ts           # Token 管理
+│   ├── request.ts        # Axios 封装（拦截器/错误处理）
+│   └── tripLimits.ts     # 行程天数约束
+└── views/front/          # 页面组件
+```
+
+## 开发环境
 
 ```bash
+# 安装依赖
 npm install
+
+# 启动开发服务器（默认 5173）
 npm run dev
-```
 
-默认访问：
-
-```text
-http://127.0.0.1:5173
-```
-
-构建：
-
-```bash
+# 构建生产版本
 npm run build
-```
 
-预览构建产物：
-
-```bash
+# 预览构建产物
 npm run preview
 ```
 
 ## 环境变量
 
-### `.env.development`
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `VITE_API_BASE_URL` | API 请求前缀 | `/api` |
+| `VITE_BACKEND_TARGET` | Vite 代理目标 | `http://127.0.0.1:8080` |
+| `AMAP_API_KEY` | 高德地图 JSAPI Key | — |
+| `AMAP_SECURITY_JS_CODE` | 高德安全密钥 | — |
 
-当前联调配置：
+开发模式下 Vite 自动代理 `/api` 到后端，生产环境通过 Nginx 反向代理。
 
-```text
-VITE_API_BASE_URL=/api
-VITE_BACKEND_TARGET=http://127.0.0.1:8080
+## 生产部署
+
+```bash
+# 构建
+npm run build
+
+# 将 dist/ 部署到 Nginx 目录
+# Nginx 配置参考：
+#   root /var/www/ai-trip;
+#   location / { try_files $uri $uri/ /index.html; }
+#   location /api/ { proxy_pass http://127.0.0.1:10001; }
 ```
 
-含义：
+## 与后端联调
 
-- `VITE_API_BASE_URL=/api`：浏览器请求同源 `/api`。
-- `VITE_BACKEND_TARGET=http://127.0.0.1:8080`：Vite dev server 将 `/api` 转发到后端。
-
-### 高德地图
-
-地图测试页使用高德 JSAPI。Vite 配置已允许读取 `VITE_` 和 `AMAP_` 前缀变量。
-
-可选配置：
-
-```text
-AMAP_API_KEY=你的高德 Web JS API Key
-AMAP_SECURITY_JS_CODE=你的安全密钥
-```
-
-也兼容：
-
-```text
-VITE_AMAP_KEY=你的高德 Web JS API Key
-VITE_AMAP_SECURITY_CODE=你的安全密钥
-```
-
-未配置 key 时，`/map-playground` 不会白屏，会显示：
-
-```text
-地图暂不可用，请检查高德地图配置
-```
-
-修改环境变量后需要重启 `npm run dev`。
-
-## 路由页面
-
-| 页面 | 路由 | 当前数据来源/状态 |
-| --- | --- | --- |
-| 首页 | `/` | 后端 `/home` |
-| 登录 | `/login` | 后端 API |
-| 注册 | `/register` | 后端 API |
-| 个人中心 | `/profile` | 后端 API |
-| AI 行程规划 | `/ai-trip` | 后端 `/api/ai/trips/analyze`、`/api/ai/trips/generate` |
-| 我的行程 | `/trips` | 后端 API |
-| 行程详情 | `/trips/:id` | 后端 API |
-| 游记列表 | `/notes` | 后端 API |
-| 游记详情 | `/notes/:id` | 后端 API |
-| 写游记 | `/notes/create` | 后端 API |
-| 编辑游记 | `/notes/edit/:id` | 后端 API |
-| 租车出行 | `/car-rental` | 前端演示数据/流程 |
-| 地图测试页 | `/map-playground` | 独立高德地图测试数据，不接现有行程业务 |
-
-## 地图测试页
-
-`/map-playground` 用来验证高德地图能力，暂不接业务数据。
-
-当前支持：
-
-- 三组测试路线：杭州轻松游、成都城市烟火、西安历史文化
-- 地图 marker 编号 1-4
-- marker 间折线连接
-- 左侧地点卡片与地图 marker 双向联动
-- 点击 marker 弹出 InfoWindow
-- 随机打乱顺序
-- 回到全览 `setFitView`
-- 未配置高德 key 时显示可读提示
-
-相关文件：
-
-```text
-src/utils/amapLoader.ts
-src/views/front/MapPlayground.vue
-src/vite-env.d.ts
-```
-
-## 目录说明
-
-```text
-src/
-├── api/             # API 调用层
-├── assets/          # 静态资源
-├── components/      # 页面组件和复用组件
-├── layouts/         # FrontLayout 顶部导航和页脚
-├── router/          # Vue Router 配置
-├── stores/          # Pinia 状态
-├── types/           # TypeScript 类型
-├── utils/           # auth、request、高德 loader 等工具
-└── views/front/     # 前台页面
-```
-
-## 与后端联调注意
-
-- 后端很多接口还在骨架阶段，返回 501 时前端部分页面会弹出后端错误。
-- 首页 `/home` 失败时显示页面空态，不再使用前端假数据兜底。
-- 登录态 token 存在 localStorage，路由守卫会保护 `/ai-trip`、`/trips`、`/profile`、写游记等页面。
-- 地图测试页只依赖前端高德 JSAPI key，不依赖后端高德 REST 配置。
-
-## 不要做的事
-
-- 不要混用 pnpm/yarn。本项目使用 npm，提交 `package-lock.json`。
-- 不要提交真实 `.env` 和任何密钥。
-- 地图测试页目前不要接入 `AiTrip.vue` 或 `DayPlanCard.vue`，后续业务整合再单独设计。
+- 登录态 Token 存储在 localStorage，路由守卫自动保护需要登录的页面
+- 所有 API 请求自动附带 Authorization header
+- 后端 API 前缀 `/api`，通过 Nginx 或 Vite 代理转发到后端端口
+- 首页 `/home` 接口失败时显示空态，不使用前端假数据兜底

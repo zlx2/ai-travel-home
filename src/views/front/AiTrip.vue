@@ -1625,11 +1625,6 @@ function timeForIndex(index:number){
           </div>
         </div>
 
-        <!-- 不定进度条：流水 shimmer 效果 -->
-        <div class="gen-track">
-          <div class="gen-bar"></div>
-        </div>
-
         <!-- 阶段状态轮播 -->
         <div class="gen-stages">
           <div
@@ -1933,16 +1928,6 @@ function timeForIndex(index:number){
     linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,253,252,.96));
   box-shadow: 0 20px 54px rgba(15, 23, 42, .08);
 }
-.gen-panel:before {
-  content: "";
-  position: absolute;
-  left: 28px;
-  right: 28px;
-  top: 86px;
-  height: 1px;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgba(20,184,166,.32), transparent);
-}
 .gen-panel:after {
   content: "";
   position: absolute;
@@ -1989,40 +1974,11 @@ function timeForIndex(index:number){
   color: #64748b;
 }
 
-/* ── Indeterminate shimmer bar ── */
-.gen-track {
-  position: relative;
-  z-index: 1;
-  margin-top: 24px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e7eef5;
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .08);
-}
-.gen-bar {
-  height: 100%;
-  width: 46%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0f9f8f, #0ea5e9, #0f9f8f);
-  background-size: 200% 100%;
-  animation: genShimmer 1.6s ease-in-out infinite;
-  position: absolute;
-  top: 0;
-  left: 0;
-  box-shadow: 0 0 12px rgba(15, 159, 143, .28);
-}
-@keyframes genShimmer {
-  0% { transform: translateX(-20%); }
-  50% { transform: translateX(180%); }
-  100% { transform: translateX(360%); }
-}
-
 /* ── Stage steps ── */
 .gen-stages {
   position: relative;
   z-index: 1;
-  margin-top: 20px;
+  margin-top: 26px;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 0;
@@ -2042,9 +1998,8 @@ function timeForIndex(index:number){
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
-  padding-top: 1px;
   text-align: center;
   opacity: .72;
   transition: opacity 0.35s ease, transform .35s ease;
@@ -2076,10 +2031,12 @@ function timeForIndex(index:number){
   background: #cbd5e1;
   transition: all .35s ease;
 }
+
+/* ── Completed state: teal solid circle with checkmark ── */
 .gen-stage.done .gen-dot {
   border-color: rgba(15,159,143,.28);
   background: linear-gradient(135deg, #0f9f8f, #0ea5e9);
-  box-shadow: 0 10px 22px rgba(15,159,143,.18);
+  box-shadow: 0 8px 20px rgba(15,159,143,.22);
 }
 .gen-stage.done .gen-dot i {
   width: 13px;
@@ -2090,24 +2047,35 @@ function timeForIndex(index:number){
   background: transparent;
   transform: translateY(-1px) rotate(-45deg);
 }
+
+/* ── Active state: heartbeat + pulse-ring ── */
 .gen-stage.current .gen-dot {
-  border-color: rgba(15,159,143,.65);
+  border-color: rgba(15,159,143,.50);
   background: #fff;
-  box-shadow: 0 0 0 7px rgba(15,159,143,.08), 0 12px 26px rgba(15,159,143,.20);
-  animation: genPulse 1.7s ease-in-out infinite;
-}
-.gen-stage.current .gen-dot:before {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border: 1px solid rgba(15,159,143,.18);
-  border-radius: inherit;
+  box-shadow: 0 6px 16px rgba(15,159,143,.12);
 }
 .gen-stage.current .gen-dot i {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   background: #0f9f8f;
   box-shadow: 0 0 0 4px rgba(15,159,143,.10);
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+.gen-stage.current .gen-dot::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(15,159,143,.25);
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Pending state: gray (default dot styling applies) ── */
+.gen-stage:not(.done):not(.current) .gen-stage-text {
+  color: #94a3b8;
+}
+.gen-stage:not(.done):not(.current) small {
+  color: #cbd5e1;
 }
 .gen-stage-text {
   margin-top: 3px;
@@ -2162,10 +2130,24 @@ function timeForIndex(index:number){
 .gen-hint.warn {
   color: #d97706;
 }
-@keyframes genPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.08); }
+
+/* ── Heartbeat for active step center dot ── */
+@keyframes heartbeat {
+  0%   { transform: scale(1); }
+  12%  { transform: scale(1.22); }
+  24%  { transform: scale(1); }
+  36%  { transform: scale(1.12); }
+  56%  { transform: scale(1); }
+  100% { transform: scale(1); }
 }
+
+/* ── Pulse ring for active step ── */
+@keyframes pulse-ring {
+  0%   { transform: scale(0.75); opacity: 0.5; }
+  60%  { transform: scale(1.6);  opacity: 0; }
+  100% { transform: scale(1.6);  opacity: 0; }
+}
+
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }

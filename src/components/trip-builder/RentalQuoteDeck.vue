@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowRight, Check, Clock, Headset, InfoFilled, Money, StarFilled, Van } from '@element-plus/icons-vue'
+import { Check, Clock, Headset, Money, StarFilled, Van } from '@element-plus/icons-vue'
 import type { RentalQuote } from './types'
 
 const props = defineProps<{ quotes: RentalQuote[]; selectedId: string; loading?: boolean; pickupText?: string }>()
@@ -106,12 +106,6 @@ const reasonText = (quote: RentalQuote) =>
       </article>
     </div>
 
-    <div class="quote-note">
-      <span><el-icon><InfoFilled /></el-icon>选择一个套餐后，后续行程会按接车点、车辆和自驾方式继续生成。</span>
-      <button class="continue-btn" type="button" :disabled="loading || !quotes.length" @click="emit('continue')">
-        继续生成行程 <el-icon><ArrowRight /></el-icon>
-      </button>
-    </div>
   </section>
 </template>
 
@@ -479,52 +473,9 @@ const reasonText = (quote: RentalQuote) =>
   font-weight: 800;
 }
 
-.quote-note {
-  max-width: 1030px;
-  min-height: 64px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 190px;
-  gap: 18px;
-  align-items: center;
-  margin: 20px auto 0;
-  padding: 12px 18px;
-  border: 1px solid rgba(226, 234, 245, .72);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, .76);
-  color: #6b7b92;
-  font-size: 13px;
-  box-shadow: 0 14px 34px rgba(30, 69, 118, .06);
-}
-
-.quote-note span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.continue-btn {
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 0;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #2f75ff, #176dff);
-  color: #fff;
-  cursor: pointer;
-  font-weight: 900;
-}
-
-.continue-btn:disabled {
-  cursor: not-allowed;
-  opacity: .64;
-}
-
 @media (max-width: 1100px) {
   .quote-grid,
-  .quote-policy,
-  .quote-note {
+  .quote-policy {
     grid-template-columns: 1fr;
   }
 

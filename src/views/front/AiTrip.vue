@@ -369,14 +369,13 @@ const quoteToView=(quote:any,index:number):RentalQuote=>{
 const decorateRentalQuotes=(quotes:RentalQuote[])=>{
   if(!quotes.length)return quotes
   const cheapestIndex=quotes.reduce((best,quote,index)=>quote.totalPrice<quotes[best].totalPrice?index:best,0)
-  const recommendedIndex=cheapestIndex===0&&quotes.length>1?1:0
-  const upgradeIndex=quotes.reduce((best,quote,index)=>{
-    if(index===cheapestIndex||index===recommendedIndex)return best
-    if(best<0)return index
-    return quote.totalPrice>quotes[best].totalPrice?index:best
-  },-1)
+  const highestIndex=quotes.reduce((best,quote,index)=>quote.totalPrice>quotes[best].totalPrice?index:best,0)
+  const recommendedIndex=quotes
+    .map((quote,index)=>({index,price:quote.totalPrice}))
+    .filter(item=>item.index!==cheapestIndex&&item.index!==highestIndex)
+    .sort((left,right)=>left.price-right.price)[0]?.index ?? (cheapestIndex===0&&quotes.length>1?1:0)
   return quotes.map((quote,index)=>{
-    const label=index===cheapestIndex?'经济优选':index===recommendedIndex?'推荐首选':index===upgradeIndex?'舒适升级':quote.label
+    const label=index===cheapestIndex?'经济优选':index===highestIndex?'舒适型轿车':index===recommendedIndex?'推荐首选':quote.label
     return {...quote,label,tone:quoteToneFromLabel(label)}
   })
 }
@@ -729,7 +728,8 @@ const chooseDestination=async(name:string)=>{
 const continueFromSummary=()=>{
   if(!ready.value)return
   if(hasRental.value){
-    enterQuoteSelect()
+    if(step.value==='QUOTE_SELECT')continueToRentalDetails()
+    else enterQuoteSelect()
   }else{
     step.value='DAY_BUILDING'
     startDayBuilding()
@@ -1576,7 +1576,6 @@ function timeForIndex(index:number){
         :loading="quoteLoading"
         :pickup-text="rentalContext?.pickupPlan?.displayText"
         @select="selectQuote"
-        @continue="continueToRentalDetails"
       />
 
       <section v-if="step==='RENTAL_DETAILS'" class="rd-panel">

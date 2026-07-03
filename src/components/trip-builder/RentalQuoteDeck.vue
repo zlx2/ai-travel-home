@@ -39,6 +39,11 @@ const reasonText = (quote: RentalQuote) =>
   <section class="quote-section">
     <div v-if="loading" class="quote-loading">正在匹配附近服务点和租车套餐...</div>
 
+    <div v-else-if="!displayedQuotes.length" class="quote-empty">
+      <b>暂时没有可展示的租车套餐</b>
+      <span>请返回调整到达地点或预算范围后重试。</span>
+    </div>
+
     <div class="quote-grid">
       <article
         v-for="(quote, index) in displayedQuotes"
@@ -123,6 +128,29 @@ const reasonText = (quote: RentalQuote) =>
   color: #64748b;
   font-weight: 800;
   box-shadow: 0 14px 34px rgba(36, 80, 132, .07);
+}
+
+.quote-empty {
+  margin-bottom: 14px;
+  min-height: 156px;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  padding: 20px;
+  border: 1px solid #dbe7f3;
+  border-radius: 14px;
+  background: #fff;
+  color: #64748b;
+  box-shadow: 0 14px 34px rgba(36, 80, 132, .07);
+}
+
+.quote-empty b {
+  color: #172033;
+  font-size: 17px;
+}
+
+.quote-empty span {
+  font-size: 13px;
 }
 
 .quote-grid {

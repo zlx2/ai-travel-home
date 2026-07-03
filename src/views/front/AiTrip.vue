@@ -231,28 +231,28 @@ const landingInspirationCards=[
     title:'杭州父母慢游',
     subtitle:'东站取车 · 同城还车',
     image:homeImage('hangzhou.jpg', true),
-    prompt:'上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。',
+    prompt:'上海出发，带父母去杭州玩3天2晚，周五上午高铁到杭州东站，11点左右取车，同城还车。父母60岁左右，不想爬山太多，也不想一天走太远；希望每天9:30以后开始，午餐和晚餐都要安排，晚饭后可以有一个轻松夜游或散步点。喜欢西湖自然风光、历史文化、博物馆、老街和杭帮菜，想住在西湖/湖滨/武林一带，停车方便一点。预算4000元以内，节奏轻松，避开太网红太挤的小店，不要把临安、千岛湖这种太远的地方塞进来。',
   },
   {
     tag:'机场落地',
     title:'成都落地自驾',
     subtitle:'机场到达 · 近郊自驾',
     image:homeImage('chengdu.jpg', true),
-    prompt:'上海出发，飞到成都玩3天，成都双流机场下飞机，想租车自驾，喜欢自然风光、历史文化和美食，节奏轻松，预算在4000元以内。',
-  },
-  {
-    tag:'跨城测试',
-    title:'成都周边串联',
-    subtitle:'多城市 · 异地还车',
-    image:homeImage('chongqing.jpg', true),
-    prompt:'重庆出发，去成都和都江堰玩4天，成都东站下车，想租车自驾，多城市串联，喜欢美食和历史文化，预算在6000元以内。',
+    prompt:'上海出发，飞成都玩3天2晚，第一天中午到成都双流机场，机场取车，最后一天傍晚同城还车。两个人出行，想把成都市区和一个近郊自然/水利文化点结合起来，但不要每天都开很久。喜欢川菜、茶馆、公园、历史文化、老街烟火气和晚上能散步的地方；不喜欢纯商业街打卡，也不想去太偏、停车麻烦又体验一般的点。每天需要午餐和晚餐，晚饭后最好安排夜景/河边/街区，不要吃完饭直接回酒店。预算4000元以内，住春熙路/宽窄巷子/太古里周边都可以，但别太吵。',
   },
   {
     tag:'亲子短途',
-    title:'苏州周末自驾',
+    title:'苏州园林亲子',
     subtitle:'车站到达 · 城市短途',
     image:homeImage('xian.jpg', true),
-    prompt:'上海出发，亲子去苏州玩2天，苏州站下车，想租车自驾，轻松一点，喜欢园林、古镇和本地美食，预算在3000元以内。',
+    prompt:'上海出发，周末带一个7岁孩子去苏州玩2天1晚，周六上午到苏州站，想租车自驾，同城还车。孩子对园林、坐船、水乡街巷和小吃比较感兴趣，但不能排队太久，也不要安排太多博物馆；大人想看经典园林、平江路、山塘街或一个轻松古镇。每天都要安排午餐/晚餐，餐厅尽量选本帮菜或适合孩子的，不要太辣。希望住在观前街/平江路/金鸡湖附近，晚上能散步，不要一天内在苏州城东西南北来回跑。预算3000元以内，节奏轻松，雨天也能替换。',
+  },
+  {
+    tag:'历史美食',
+    title:'西安古都慢游',
+    subtitle:'高铁到达 · 老城美食',
+    image:homeImage('xian.jpg', true),
+    prompt:'上海出发，去西安玩3天2晚，第一天上午高铁到西安北站，想租车自驾，同城还车，但市区停车不方便的话可以少开车。两个人出行，重点想看历史文化、陕西历史博物馆、古城墙、大雁塔和本地美食；兵马俑/华清宫可以安排一天，但不要和市区景点硬挤在同一天。每天午餐晚餐都要有，晚餐后希望有大唐不夜城、城墙夜景或老城散步，不要早早回酒店。住宿希望在钟楼/小寨/大雁塔附近，别太偏也别太贵。预算4500元以内，节奏中等偏轻松，避免明显绕路。',
   },
 ]
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
@@ -492,6 +492,7 @@ const applyExample=(value:string)=>{
   if(value.includes('成都')) form.destination='成都'
   if(value.includes('重庆')) form.destination='重庆'
   if(value.includes('苏州')) form.destination='苏州'
+  if(value.includes('西安')) form.destination='西安'
   if(value.includes('江浙沪')) form.destination='杭州'
   if(value.includes('上海出发')) form.departure='上海'
   if(value.includes('重庆出发')) form.departure='重庆'
@@ -1135,10 +1136,11 @@ function emptyTripDay(dayNo:number,requirement:Requirement):TripDay{
 }
 
 function daySubtitle(day:TripDay,activities:any[],travelPace:string,rentalEnabled:boolean){
-  const count=activities.length
-  const first=activities[0]?.title
-  const last=activities[count-1]?.title
-  if(count>=2)return `${first}等 ${count} 个地点 · ${travelPace}游览 · ${rentalEnabled?'自驾衔接':'步行 + 打车'}`
+  const scenicActivities=activities.filter(item=>!isUtilityTimelineType(item.type))
+  const count=scenicActivities.length
+  const first=scenicActivities[0]?.title||activities.find(item=>!['LUNCH_AREA','DINNER_AREA','STAY_AREA'].includes(String(item.type||'')))?.title
+  if(count>=2)return `${first}等 ${count} 个景点 · ${travelPace}游览 · ${rentalEnabled?'自驾衔接':'步行 + 打车'}`
+  if(count===1)return `${first} · 仅 1 个有效景点，建议重新生成当天`
   if(first)return `${first} · ${travelPace}游览`
   return `${travelPace}游览 · 城市精选路线`
 }
@@ -1418,12 +1420,6 @@ function timeForIndex(index:number){
             <span>{{ card.tag }}</span>
             <b>{{ card.title }}</b>
           </button>
-        </div>
-        <div class="inspiration-grid">
-          <button @click="applyExample('上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')"><span>高铁到达</span><b>杭州父母慢游</b><small>东站取车 · 同城还车</small></button>
-          <button @click="applyExample('上海出发，飞到成都玩3天，成都双流机场下飞机，想租车自驾，喜欢自然风光、历史文化和美食，节奏轻松，预算在5000元以内。')"><span>机场落地</span><b>成都落地自驾</b><small>机场到达 · 近郊自驾</small></button>
-          <button @click="applyExample('重庆出发，去成都和都江堰玩4天，成都东站下车，想租车自驾，多城市串联，喜欢美食和历史文化，预算在6000元以内。')"><span>跨城测试</span><b>成都周边串联</b><small>多城市 · 异地还车</small></button>
-          <button @click="applyExample('上海出发，亲子去苏州玩2天，苏州站下车，想租车自驾，轻松一点，喜欢园林、古镇和本地美食，预算在3000元以内。')"><span>亲子短途</span><b>苏州周末自驾</b><small>车站到达 · 城市短途</small></button>
         </div>
       </section>
 
@@ -1752,7 +1748,7 @@ function timeForIndex(index:number){
       />
 
       <el-dialog v-model="reviseVisible" title="修改这一天的偏好" width="520px">
-        <el-input v-model="reviseText" type="textarea" :rows="5" resize="none" placeholder="例如：下午太累了，换成轻松一点；午餐想吃本地老字号；减少步行距离。"/>
+        <el-input v-model="reviseText" type="textarea" :rows="5" resize="none" placeholder="例如：不想去宽窄巷子，只换这个景点，其它安排别变；下午太累了，换成轻松一点；午餐想吃本地老字号。"/>
         <template #footer>
           <el-button @click="reviseVisible=false">取消</el-button>
           <el-button type="primary" @click="submitRevision">提交调整</el-button>

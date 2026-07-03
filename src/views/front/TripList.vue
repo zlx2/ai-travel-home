@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Calendar, Coin, Delete, MagicStick, Search } from '@element-plus/icons-vue'
 import { tripApi } from '../../api'
 import type { Trip } from '../../types'

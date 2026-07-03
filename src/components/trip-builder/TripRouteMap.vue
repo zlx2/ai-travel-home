@@ -68,7 +68,8 @@ const markerTypeClass=(type?:string)=>{
 }
 const markerHtml=(index:number,active:boolean,type?:string)=>`<div class="ai-route-marker ${markerTypeClass(type)} ${active?'active':''}"><span>${index+1}</span></div>`
 const foodMarkerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 3.1v7.2M10 3.1v7.2M4.4 3.1v7.2M4.4 10.3h5.6M7.2 10.3v10.6M16.5 3.4c2.1 1.5 3.2 3.7 3.2 6.7v2.3h-3.1v8.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"/></svg>'
-const poiMarkerHtml=(type:NearbyType,index:number)=>`<div class="ai-poi-marker ${type}"><span>${type==='food'?foodMarkerIcon:index+1}</span></div>`
+const hotelMarkerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V7a2 2 0 012-2h14a2 2 0 012 2v14M3 13h18M7 9h4M7 17h4M13 9h4M13 17h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>'
+const poiMarkerHtml=(type:NearbyType,index:number)=>`<div class="ai-poi-marker ${type}"><span>${type==='food'?foodMarkerIcon:type==='hotel'?hotelMarkerIcon:index+1}</span></div>`
 const infoHtml=(place:TripMapPlace,index:number)=>`<div class="ai-map-info"><strong>${index+1}. ${place.title}</strong><span>${place.time}</span><p>${place.desc}</p></div>`
 const nearbyCoverImage=(poi:NearbyPoi)=>{
   if(poi.imageUrl)return `<img src="${poi.imageUrl}" alt="${poi.name}">`
@@ -99,8 +100,46 @@ const nearbyCoverImage=(poi:NearbyPoi)=>{
   </svg>`
   return `<img src="data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}" alt="${poi.name}">`
 }
+const hotelCoverImage=(poi:NearbyPoi)=>{
+  if(poi.imageUrl)return `<img src="${poi.imageUrl}" alt="${poi.name}">`
+  const title=poi.name.slice(0,8)
+  const subtitle=poi.typeName||'品质酒店'
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320">
+    <defs>
+      <linearGradient id="hbg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#1e40af"/>
+        <stop offset=".52" stop-color="#3b82f6"/>
+        <stop offset="1" stop-color="#0ea5e9"/>
+      </linearGradient>
+      <radialGradient id="hlight" cx=".68" cy=".28" r=".68">
+        <stop offset="0" stop-color="#dbeafe" stop-opacity=".52"/>
+        <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="640" height="320" rx="0" fill="url(#hbg)"/>
+    <rect width="640" height="320" fill="url(#hlight)"/>
+    <circle cx="120" cy="260" r="100" fill="#ffffff" opacity=".07"/>
+    <circle cx="540" cy="72" r="72" fill="#ffffff" opacity=".10"/>
+    <g transform="translate(60 72)" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" opacity=".78">
+      <rect x="0" y="24" width="96" height="68" rx="8"/>
+      <path d="M0 56h96"/>
+      <path d="M24 24V0h48v24"/>
+      <circle cx="48" cy="40" r="8" fill="#fff" opacity=".6"/>
+    </g>
+    <text x="340" y="134" text-anchor="middle" fill="#fff" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="44" font-weight="800">${title}</text>
+    <text x="340" y="182" text-anchor="middle" fill="#fff" opacity=".88" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="24" font-weight="700">${subtitle}</text>
+  </svg>`
+  return `<img src="data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}" alt="${poi.name}">`
+}
 const poiInfoHtml=(poi:NearbyPoi,type:NearbyType)=>{
-  if(type==='hotel')return `<div class="ai-map-info"><strong>${nearbyLabels[type]}：${poi.name}</strong><span>${poi.distance?`${poi.distance} 米`:'距离未知'}</span><p>${poi.address||'暂无地址'}</p></div>`
+  if(type==='hotel')return `<div class="ai-hotel-card">
+    <div class="hotel-cover">${hotelCoverImage(poi)}<span>${poi.anchorTitle?`${poi.anchorTitle}周边`:'住宿推荐'}</span></div>
+    <div class="hotel-body">
+      <strong>${poi.name}</strong>
+      <p class="hotel-meta"><b>${poi.rating||'4.5'}分</b><span>${poi.typeName||'酒店'}</span></p>
+      <p class="hotel-address">📍 ${poi.address||'暂无地址'} · 距${poi.anchorTitle||'当前点'}${poi.distance?`${poi.distance}米`:'较近'}</p>
+    </div>
+  </div>`
   return `<div class="ai-food-card">
     <div class="food-cover">${nearbyCoverImage(poi)}<span>${poi.anchorTitle?`${poi.anchorTitle}周边`:'美食推荐'}</span></div>
     <div class="food-body">
@@ -150,7 +189,7 @@ const openPoiInfoWindow=(poi:NearbyPoi,type:NearbyType)=>{
   if(!map||!infoWindow)return
   infoWindow.setContent(poiInfoHtml(poi,type))
   infoWindow.open(map,[poi.lng,poi.lat])
-  if(type==='food'){
+  if(type==='food'||type==='hotel'){
     map.panTo([poi.lng,poi.lat])
     window.setTimeout(()=>map?.panBy?.(0,140),80)
   }
@@ -201,28 +240,6 @@ const createTripMarkers=()=>{
     return marker
   })
   map.add(markers)
-  // show first recommended hotel marker per day
-  const seen=new Set<string>()
-  props.places.forEach((place)=>{
-    const hotel=place.nearbyHotels?.[0]
-    if(!hotel)return
-    const key=hotel.lng+','+hotel.lat
-    if(seen.has(key))return
-    seen.add(key)
-    const hMarker=new AMap.Marker({
-      position:[hotel.lng,hotel.lat],
-      content:'<div class="ai-poi-marker hotel"><span>🏨</span></div>',
-      anchor:'bottom-center',
-      title:hotel.name,
-      zIndex:100,
-    })
-    hMarker.on('click',()=>{
-      if(!infoWindow)return
-      infoWindow.setContent(`<div class="ai-map-info"><strong>酒店：${hotel.name}</strong><span>${hotel.distanceMeters?hotel.distanceMeters+' 米':''}</span><p>${hotel.address||''}</p></div>`)
-      infoWindow.open(map,[hotel.lng,hotel.lat])
-    })
-    map.add(hMarker)
-  })
 }
 
 const parseRouteToPath=(route:any)=>{
@@ -356,8 +373,8 @@ const searchNearby=async(type:NearbyType)=>{
   activeNearbyType.value=type
   if(poiSearch?.clear)poiSearch.clear()
   try{
-    const placeTargets=type==='food'?props.places:[activePlace.value]
-    const results=await Promise.all(placeTargets.map((place,index)=>searchPoisAroundPlace(type,place,type==='food'?index:activeIndex.value)))
+    const placeTargets=props.places
+    const results=await Promise.all(placeTargets.map((place,index)=>searchPoisAroundPlace(type,place,index)))
     const pois=results.flat()
     if(!pois.length){
       clearNearby()
@@ -467,6 +484,26 @@ onBeforeUnmount(()=>{
   height:17px;
   display:block;
 }
+:global(.ai-poi-marker.hotel){
+  width:28px;
+  height:28px;
+  background:#2563eb;
+  border:3px solid #fff;
+  box-shadow:0 6px 14px rgba(37,99,235,.32);
+  color:#fff;
+}
+:global(.ai-poi-marker.hotel span){
+  width:17px;
+  height:17px;
+  display:grid;
+  place-items:center;
+  transform:none;
+}
+:global(.ai-poi-marker.hotel svg){
+  width:17px;
+  height:17px;
+  display:block;
+}
 :global(.amap-info-content){
   border-radius:16px!important;
   padding:0!important;
@@ -532,6 +569,70 @@ onBeforeUnmount(()=>{
   color:#475569;
 }
 :global(.food-address){
+  margin:10px 0 0;
+  color:#4b5563;
+  font-size:13px;
+  line-height:1.55;
+}
+:global(.ai-hotel-card){
+  width:292px;
+  overflow:hidden;
+  border-radius:16px;
+  background:#fff;
+  color:#111827;
+}
+:global(.hotel-cover){
+  position:relative;
+  height:150px;
+  background:#e0ecf8;
+}
+:global(.hotel-cover img){
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+:global(.hotel-cover span){
+  position:absolute;
+  left:12px;
+  bottom:10px;
+  border-radius:999px;
+  padding:5px 9px;
+  color:#fff;
+  background:rgba(30,64,175,.72);
+  font-size:12px;
+  font-weight:900;
+  backdrop-filter:blur(8px);
+}
+:global(.hotel-body){
+  padding:14px 16px 16px;
+}
+:global(.hotel-body strong){
+  display:block;
+  color:#111827;
+  font-size:18px;
+  line-height:1.3;
+}
+:global(.hotel-meta){
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  margin:9px 0 0;
+  color:#64748b;
+  font-size:13px;
+}
+:global(.hotel-meta b){
+  border-radius:5px;
+  padding:2px 5px;
+  color:#fff;
+  background:#2563eb;
+  font-size:13px;
+}
+:global(.hotel-meta span){
+  color:#475569;
+}
+:global(.hotel-address){
   margin:10px 0 0;
   color:#4b5563;
   font-size:13px;

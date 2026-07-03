@@ -28,10 +28,20 @@ const generateProgress=ref(1)
 const generateProgressLabel=ref('准备生成行程')
 let generateTimer:number|undefined
 
-// 生成阶段轮播（纯前端展示，不代表后端真实进度）
+// 生成阶段（由后端 SSE event.node 驱动，非定时器轮播）
 const loadingStages=['整理旅行需求','规划每日路线','匹配景点与餐饮','优化交通与时间','生成完整行程']
 const loadingStageIndex=ref(0)
-let stageTimer:number|undefined
+// 后端节点名 → 前端步骤索引映射
+const NODE_TO_STAGE:Record<string,number>={
+  'start':0,'prepare-session':0,
+  'generating-day1':1,
+  'parsing-result':2,'assembling-timeline':2,
+  'calculating-budget':3,'prefetching-next':3,
+  'finalizing':4,
+}
+// 每个步骤最短展示时间（避免后端快节奏阶段一闪而过）
+const STAGE_MIN_DWELL_MS=1200
+let stageEntryTime=0
 let previewTimer:number|undefined
 const showLongWaitHint30=ref(false)
 const showLongWaitHint90=ref(false)
@@ -41,7 +51,7 @@ watch(generateElapsed,(val)=>{
   else if(val>=30)showLongWaitHint30.value=true
 })
 
-onUnmounted(()=>{ stopGenerateTimer();stopStageTimer();stopPreviewCarousel() })
+onUnmounted(()=>{ stopGenerateTimer();stopPreviewCarousel() })
 const saving=ref(false)
 const confirming=ref(false)
 const orderCreated=ref(false)
@@ -708,7 +718,18 @@ const startDayBuilding=async()=>{
     const extras=hasRental.value?{selectedQuote:selectedBackendQuote.value,rentalTripContext}:undefined
     const data=await aiApi.generateStream(result.value.conversationId,result.value.requirement,event=>{
       if(event.label)generateProgressLabel.value=event.label
-      if(typeof event.progress==='number')generateProgress.value=event.progress
+      if(event.node){
+        const s=NODE_TO_STAGE[event.node]
+        if(s!==undefined&&s>loadingStageIndex.value){
+          const now=Date.now()
+          const dwelled=now-stageEntryTime>=STAGE_MIN_DWELL_MS
+          const isLast=s===loadingStages.length-1
+          if(dwelled||isLast){
+            loadingStageIndex.value=s
+            stageEntryTime=now
+          }
+        }
+      }
     },extras)
     assertFirstDayGenerated(data.tripPlan)
     generationSessionId.value=data.generationSessionId||''
@@ -733,33 +754,22 @@ const startDayBuilding=async()=>{
 
 function startGenerateTimer(){
   stopGenerateTimer()
-  stopStageTimer()
   generateElapsed.value=0
   generateProgress.value=1
   generateProgressLabel.value='开始生成行程'
   loadingStageIndex.value=0
+  stageEntryTime=Date.now()
   showLongWaitHint30.value=false
   showLongWaitHint90.value=false
   generateTimer=window.setInterval(()=>{
     generateElapsed.value+=1
   },1000)
-  // 阶段轮播每 4 秒推进一次
-  stageTimer=window.setInterval(()=>{
-    loadingStageIndex.value=(loadingStageIndex.value+1)%loadingStages.length
-  },4000)
 }
 
 function stopGenerateTimer(){
   if(generateTimer){
     window.clearInterval(generateTimer)
     generateTimer=undefined
-  }
-}
-
-function stopStageTimer(){
-  if(stageTimer){
-    window.clearInterval(stageTimer)
-    stageTimer=undefined
   }
 }
 

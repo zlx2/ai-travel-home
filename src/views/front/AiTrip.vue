@@ -232,28 +232,28 @@ const landingInspirationCards=[
     title:'杭州父母慢游',
     subtitle:'东站取车 · 同城还车',
     image:homeImage('hangzhou.jpg', true),
-    prompt:'上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。',
+    prompt:'南京坐高铁去杭州玩3天，杭州东站下车，预算4000以内，节奏轻松3人带父母出行，住西湖附近。',
   },
   {
     tag:'机场落地',
     title:'成都落地自驾',
     subtitle:'机场到达 · 近郊自驾',
     image:homeImage('chengdu.jpg', true),
-    prompt:'上海出发，飞到成都玩3天，成都双流机场下飞机，想租车自驾，喜欢自然风光、历史文化和美食，节奏轻松，预算在4000元以内。',
-  },
-  {
-    tag:'跨城测试',
-    title:'成都周边串联',
-    subtitle:'多城市 · 异地还车',
-    image:homeImage('chongqing.jpg', true),
-    prompt:'重庆出发，去成都和都江堰玩4天，成都东站下车，想租车自驾，多城市串联，喜欢美食和历史文化，预算在6000元以内。',
+    prompt:'北京飞成都玩4天，双流机场落地，预算5000以内，节奏中等2人自驾，喜欢川菜和古街。',
   },
   {
     tag:'亲子短途',
-    title:'苏州周末自驾',
+    title:'苏州园林亲子',
     subtitle:'车站到达 · 城市短途',
     image:homeImage('xian.jpg', true),
-    prompt:'上海出发，亲子去苏州玩2天，苏州站下车，想租车自驾，轻松一点，喜欢园林、古镇和本地美食，预算在3000元以内。',
+    prompt:'上海坐高铁去苏州玩2天，苏州站下车，预算3000以内，节奏轻松2人带7岁孩子看园林逛水乡。',
+  },
+  {
+    tag:'历史美食',
+    title:'西安古都慢游',
+    subtitle:'高铁到达 · 老城美食',
+    image:homeImage('xian.jpg', true),
+    prompt:'广州飞西安玩3天，咸阳机场落地，预算4500以内，节奏紧凑1人出行，重点看历史文化和美食。',
   },
 ]
 const selectedQuote=computed(()=>quoteOptions.value.find(item=>item.id===selectedQuoteId.value)||quoteOptions.value[0]||null)
@@ -494,6 +494,7 @@ const applyExample=(value:string)=>{
   if(value.includes('成都')) form.destination='成都'
   if(value.includes('重庆')) form.destination='重庆'
   if(value.includes('苏州')) form.destination='苏州'
+  if(value.includes('西安')) form.destination='西安'
   if(value.includes('江浙沪')) form.destination='杭州'
   if(value.includes('上海出发')) form.departure='上海'
   if(value.includes('重庆出发')) form.departure='重庆'
@@ -514,7 +515,7 @@ const applyExample=(value:string)=>{
   if(peopleText)form.peopleCount=peopleText[1]?Number(peopleText[1]):chinesePeople[peopleText[2]]
   if(/轻松|不要太累|不累/.test(value))form.pace='LIGHT'
   syncRouteScopeToDestination(form)
-  userInput.value=templateSupplement(value)
+  userInput.value=value
 }
 
 const compactRequirementText=(requirement:Partial<Requirement>)=>{
@@ -1152,10 +1153,11 @@ function emptyTripDay(dayNo:number,requirement:Requirement):TripDay{
 }
 
 function daySubtitle(day:TripDay,activities:any[],travelPace:string,rentalEnabled:boolean){
-  const count=activities.length
-  const first=activities[0]?.title
-  const last=activities[count-1]?.title
-  if(count>=2)return `${first}等 ${count} 个地点 · ${travelPace}游览 · ${rentalEnabled?'自驾衔接':'步行 + 打车'}`
+  const scenicActivities=activities.filter(item=>!isUtilityTimelineType(item.type))
+  const count=scenicActivities.length
+  const first=scenicActivities[0]?.title||activities.find(item=>!['LUNCH_AREA','DINNER_AREA','STAY_AREA'].includes(String(item.type||'')))?.title
+  if(count>=2)return `${first}等 ${count} 个景点 · ${travelPace}游览 · ${rentalEnabled?'自驾衔接':'步行 + 打车'}`
+  if(count===1)return `${first} · 仅 1 个有效景点，建议重新生成当天`
   if(first)return `${first} · ${travelPace}游览`
   return `${travelPace}游览 · 城市精选路线`
 }
@@ -1451,12 +1453,6 @@ function timeForIndex(index:number){
             <span>{{ card.tag }}</span>
             <b>{{ card.title }}</b>
           </button>
-        </div>
-        <div class="inspiration-grid">
-          <button @click="applyExample('上海出发，带父母去杭州玩3天，杭州东站下车，不要太累，喜欢自然风光和历史文化，美食也想体验一下，预算在4000元以内。')"><span>高铁到达</span><b>杭州父母慢游</b><small>东站取车 · 同城还车</small></button>
-          <button @click="applyExample('上海出发，飞到成都玩3天，成都双流机场下飞机，想租车自驾，喜欢自然风光、历史文化和美食，节奏轻松，预算在5000元以内。')"><span>机场落地</span><b>成都落地自驾</b><small>机场到达 · 近郊自驾</small></button>
-          <button @click="applyExample('重庆出发，去成都和都江堰玩4天，成都东站下车，想租车自驾，多城市串联，喜欢美食和历史文化，预算在6000元以内。')"><span>跨城测试</span><b>成都周边串联</b><small>多城市 · 异地还车</small></button>
-          <button @click="applyExample('上海出发，亲子去苏州玩2天，苏州站下车，想租车自驾，轻松一点，喜欢园林、古镇和本地美食，预算在3000元以内。')"><span>亲子短途</span><b>苏州周末自驾</b><small>车站到达 · 城市短途</small></button>
         </div>
       </section>
 
@@ -1785,7 +1781,7 @@ function timeForIndex(index:number){
       />
 
       <el-dialog v-model="reviseVisible" title="修改这一天的偏好" width="520px">
-        <el-input v-model="reviseText" type="textarea" :rows="5" resize="none" placeholder="例如：下午太累了，换成轻松一点；午餐想吃本地老字号；减少步行距离。"/>
+        <el-input v-model="reviseText" type="textarea" :rows="5" resize="none" placeholder="例如：不想去宽窄巷子，只换这个景点，其它安排别变；下午太累了，换成轻松一点；午餐想吃本地老字号。"/>
         <template #footer>
           <el-button @click="reviseVisible=false">取消</el-button>
           <el-button type="primary" @click="submitRevision">提交调整</el-button>
